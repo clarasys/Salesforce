@@ -1,0 +1,121 @@
+/*
+========================================================================================================
+   @Author Clarasys
+   @name SprintBurndown_Scheduler_TestSuite.cls
+   @CreateDate 23/03/2014
+   @Description Test suite for the CalculateSprintBurndown_Batch_Scheduler Class
+   @Version 1.0
+   @Comments: 
+========================================================================================================
+*/
+@isTest
+public class SprintBurndown_Scheduler_TestSuite {
+    
+    // CRON expression: midnight on March 15
+  // Because this is a test, job executes immediately after Test.stopTest()
+  
+    public static String CRON_EXP = '0 0 0 15 3 ? 2022';
+  
+    static testmethod void test() {
+      
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, Single Sprint (Status = 'Active') with Two User Stories (each with two Tasks)]
+        //================================================================================================ 
+    */
+        // Create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.Name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; // Insert testProject record
+        
+        // Create Sprint
+        sprinter__Sprint__c testSprint  = new sprinter__Sprint__c();
+          testSprint.sprinter__Project__c = testProject.Id;
+          testSprint.Actual_Effort_Remaining__c = 0.00;
+          testSprint.Ideal_Burndown_Effort_Remaining__c = 0.00;
+          testSprint.sprinter__Start_Date__c = Date.Today() - 5; // mid-way through sprint
+          testSprint.sprinter__End_Date__c = testSprint.sprinter__Start_Date__c + 10;
+          testSprint.sprinter__Status__c = 'Active';
+        
+        insert testSprint; // Insert testSprint record
+        
+        // Create User Stories
+        List<sprinter__User_Story__c> lstTestStories = new List<sprinter__User_Story__c>();
+        for (Integer i = 0; i < 2; i++) {
+            sprinter__User_Story__c s = new sprinter__User_Story__c();
+            s.sprinter__Project__c = testProject.Id;
+            s.sprinter__Sprint__c = testSprint.Id;
+            s.sprinter__Status__c = 'In Progress';
+            lstTestStories.add(s);
+        }
+        
+        insert lstTestStories; // Insert lstTestStories records
+        
+        // Create Tasks (one per User Story)
+        List<sprinter__Element__c> lstTestTasks = new List<sprinter__Element__c>();
+        for (Integer i = 0; i < 2; i++) {
+            sprinter__Element__c t = new sprinter__Element__c();
+            t.sprinter__User_Story__c = lstTestStories[i].Id;
+          t.sprinter__Type__c = 'Task';
+          t.sprinter__Status__c = 'In Progress';
+          t.Effort__c = 20;
+            lstTestTasks.add(t);
+        }  
+        
+        insert lstTestTasks; // Insert lstTestTasks records
+        
+        lstTestTasks[0].Remaining_Effort__c = 10;
+        lstTestTasks[1].Remaining_Effort__c = 10;
+        update lstTestTasks; // Update lstTestTasks records after workflow rules fire
+        
+        Test.startTest();
+      
+        // Schedule the test job
+      String jobId = System.schedule('SprintBurndown_Scheduler_Test', CRON_EXP, new CalculateSprintBurndown_Batch_Scheduler());
+    
+        // Get the information from the CronTrigger API object
+    CronTrigger ct = [SELECT Id, CronExpression, TimesTriggered, NextFireTime
+              FROM CronTrigger 
+                          WHERE id = :jobId];
+    
+        // Verify the expressions are the same
+    System.assertEquals(CRON_EXP, ct.CronExpression);
+    
+        // Verify the job has not run
+    System.assertEquals(0, ct.TimesTriggered);
+    
+        // Verify the next time the job will run 
+    System.assertEquals('2022-03-15 00:00:00', String.valueOf(ct.NextFireTime));
+        
+        // Verify that the Tasks have been added to the User Stories;
+        List<sprinter__User_Story__c> lstQueryTestStories = new List<sprinter__User_Story__c>([SELECT Id, Total_Estimated_Effort__c, Total_Remaining_Effort__c
+                                                                                               FROM sprinter__User_Story__c 
+                                                                                               WHERE Id IN : lstTestStories]);
+        
+        System.assertEquals(20, lstQueryTestStories[0].Total_Estimated_Effort__c);
+        System.assertEquals(20, lstQueryTestStories[1].Total_Estimated_Effort__c);
+        System.assertEquals(10, lstQueryTestStories[0].Total_Remaining_Effort__c);
+        System.assertEquals(10, lstQueryTestStories[0].Total_Remaining_Effort__c);
+        
+        // Verify that the scheduled job hasn't run, and that the Sprint hasn't been updated with the Estimated/Actual Brundown
+      sprinter__Sprint__c testQuerySprint = [SELECT Id, Actual_Effort_Remaining__c, Ideal_Burndown_Effort_Remaining__c
+                                               FROM sprinter__Sprint__c
+                                               WHERE Id = :testSprint.Id];
+        
+        System.assertEquals(testSprint.Actual_Effort_Remaining__c, 0);
+        System.assertEquals(testSprint.Ideal_Burndown_Effort_Remaining__c, 0);
+        
+        Test.stopTest(); // scheduled job should run after Test.stopTest()
+        
+        // Assert that the Actual_Effort_Remaining__c, Ideal_Burndown_Effort_Remaining__c on the Sprint has been updated
+        sprinter__Sprint__c testQuerySprintAfterBatch = [SELECT Id, Actual_Effort_Remaining__c, Ideal_Burndown_Effort_Remaining__c
+                                                      FROM sprinter__Sprint__c
+                                                      WHERE Id = :testSprint.Id];
+        
+        System.assertEquals(0, testQuerySprintAfterBatch.Actual_Effort_Remaining__c);
+        System.assertEquals(0, testQuerySprintAfterBatch.Ideal_Burndown_Effort_Remaining__c); // should = 20 as Total Estimated Effort = 40.00, and fraction Burndown = 0.5 as mid-sprint
+    }
+}

@@ -1,0 +1,37 @@
+/*
+Name:  CalculateSprintBurndown_Batch_Scheduler.cls
+Type: Apex Scheduler Class
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+Scheduler Class to schedule the CalculateSprintBurndown_Batch Class 
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date           Detail
+0.1  Clarasys       2015-03-22     Initial class development 
+*/
+
+global class CalculateSprintBurndown_Batch_Scheduler implements schedulable {
+
+//=======================================================================================================
+//Method - global scope
+//@name execute()
+//@param SchedulablelContext ctx
+//@return N/A 
+//@description : Scheduler for CalculateSprintBurndown_Batch Class
+//=======================================================================================================
+    global void execute(SchedulableContext ctx) {
+    CronTrigger ct = [SELECT Id, CronExpression, TimesTriggered, NextFireTime
+              FROM CronTrigger WHERE Id = :ctx.getTriggerId()];
+    System.debug(ct.CronExpression);
+    System.debug(ct.TimesTriggered);
+        
+        //instantiate the CalculateSprintBurndown_Batch class with query string to retirve all sprint records as the batch scope
+      CalculateSprintBurndown_Batch calculateSprintBurndown = new CalculateSprintBurndown_Batch ('SELECT id, sprinter__start_date__c, sprinter__end_date__c, sprinter__Status__c ' +
+                                                                       'FROM sprinter__Sprint__c ');
+    //execute the batch
+      ID batchprocessid = Database.executeBatch(calculateSprintBurndown); 
+    }
+}

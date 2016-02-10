@@ -1,0 +1,343 @@
+/*
+Name:  UserStoryStatusGoogleChartControllerExt.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+Class Description:
+=========================================================================================================
+-------
+Controller Extension Class contains properties used by the GoogleChartAPI in the sprinter_UserStoryStatusTimeline VF page
+-------
+=========================================================================================================
+History
+------- 
+Ver. Author         Date           Detail
+0.1  Clarasys       2015-10-27     Initial class development
+0.2  Clarasys       2015-10-30     Bug fix
+0.3  Clarasys       2015-11-04     Code tidy up
+*/
+
+global with sharing class UserStoryStatusGoogleChartControllerExt{
+
+    //Controller Extension Properties
+    public final sprinter__User_Story__c us; // variable to hold the sprinter__User_Story__c
+    
+    // The extension constructor initializes the public member variable 'us' by using the getRecord method from the standard controller
+    public UserStoryStatusGoogleChartControllerExt(ApexPages.StandardController sController) {
+       this.us = (sprinter__User_Story__c)sController.getRecord();
+    }
+
+
+//=======================================================================================================
+//Method - remote action
+//@name GetUserStoryStatusHistory()
+//@param string userStoryId
+//@return sprinter__User_Story__History 
+//@description : returns chart data to be used in the User Story Status Timeline (Google Chart)
+//=======================================================================================================
+
+    @RemoteAction   
+    global static UserStoryStatusUpdate[] GetUserStoryStatusHistory(string userStoryId) {
+        
+        //query the sprinter__User_Story__c record, to find the Createddate
+        List<sprinter__User_Story__c> lstUserStory = new List<sprinter__User_Story__c>([SELECT Id, CreatedDate
+                                                                                        FROM sprinter__User_Story__c
+                                                                                        WHERE Id = :userStoryId
+                                                                                        LIMIT 1]
+                                                                                      );
+        
+        system.debug(lstUserStory[0]);
+        
+        //query a list of the sprinter__User_Story__History field history updates for the sprinter__User_Story__c record, for the Status field updates
+        List<sprinter__User_Story__History> lstUserStoryStatusHistory = new List<sprinter__User_Story__History>([SELECT ParentId, NewValue, OldValue, CreatedById, CreatedDate 
+                                                                                                                 FROM sprinter__User_Story__History 
+                                                                                                                 WHERE parentId = :userStoryId 
+                                                                                                                 AND field = 'sprinter__status__c'
+                                                                                                                 ORDER BY CreatedDate]
+                                                                                                               ); 
+        
+        
+        for (Integer j = 0; j < lstUserStoryStatusHistory.size(); j++) {
+                  system.debug(lstUserStoryStatusHistory[j]);
+        }
+        
+      
+        
+        //construct a list of UserStoryStatusUpdate objects to be returned
+        List<UserStoryStatusUpdate> lstUserStoryStatusUpdate = new List<UserStoryStatusUpdate>();
+        
+        
+        //CASE: there is only one status field history update
+        if(lstUserStoryStatusHistory.size() == 1) {
+            
+            system.debug('got here: lstUserStoryStatusHistory.size() = ' + lstUserStoryStatusHistory.size() );
+            
+            //if the Status update occurred after the user story creation date and before today()
+            if(lstUserStoryStatusHistory[0].CreatedDate > lstUserStory[0].CreatedDate.date() && lstUserStoryStatusHistory[0].CreatedDate.date() < Date.today()) {
+            
+            system.debug('got here 2' );
+            
+            
+                UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                firstStatusUpdate.status = 'No Status';
+                firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                firstStatusUpdate.endYear = lstUserStoryStatusHistory[0].CreatedDate.year();
+                firstStatusUpdate.endMonth = lstUserStoryStatusHistory[0].CreatedDate.month();
+                firstStatusUpdate.endDay = lstUserStoryStatusHistory[0].CreatedDate.day();
+            
+                lstUserStoryStatusUpdate.add(firstStatusUpdate);
+                
+                UserStoryStatusUpdate secondStatusUpdate = new UserStoryStatusUpdate();
+                    
+                secondStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                secondStatusUpdate.startYear = lstUserStoryStatusHistory[0].CreatedDate.year();
+                secondStatusUpdate.startMonth = lstUserStoryStatusHistory[0].CreatedDate.month();
+                secondStatusUpdate.startDay = lstUserStoryStatusHistory[0].CreatedDate.day();
+                secondStatusUpdate.endYear = Date.today().year();
+                secondStatusUpdate.endMonth = Date.today().month();
+                secondStatusUpdate.endDay = Date.today().day();
+            
+                lstUserStoryStatusUpdate.add(secondStatusUpdate);
+             
+             system.debug('got here 3' );
+            
+                
+            }
+            //else if the Status update occurred on the user story creation date and before today() 
+            else if(lstUserStoryStatusHistory[0].CreatedDate.date() == lstUserStory[0].Createddate && lstUserStoryStatusHistory[0].CreatedDate.date() < Date.today()) {
+                
+                UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                firstStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                firstStatusUpdate.endYear = Date.today().year();
+                firstStatusUpdate.endMonth = Date.today().month();
+                firstStatusUpdate.endDay = Date.today().day();
+            
+                lstUserStoryStatusUpdate.add(firstStatusUpdate);
+            
+            }
+            //else if the Status update occurred on the user story creation date and on today() 
+            else if(lstUserStoryStatusHistory[0].CreatedDate == lstUserStory[0].Createddate && lstUserStoryStatusHistory[0].CreatedDate == Date.today()) {
+                
+                UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                firstStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                firstStatusUpdate.endYear = Date.today().year();
+                firstStatusUpdate.endMonth = Date.today().month();
+                firstStatusUpdate.endDay = Date.today().day() + 1;
+            
+                lstUserStoryStatusUpdate.add(firstStatusUpdate);
+            
+            }
+        }
+        
+        //CASE: there is more than one status field history update
+        if(lstUserStoryStatusHistory.size() > 1) {
+            
+            //loop through all the status field history updates
+            for(Integer i = 0; i < lstUserStoryStatusHistory.size(); i++) {
+                
+                system.debug('i= ' + i);
+                
+                //for the first status update
+                if(i == 0) {
+                    
+                    system.debug('got here 9');
+                    
+                    //if the first Status update occurred after the user story creation date and before today()
+                    if(lstUserStoryStatusHistory[0].CreatedDate.date() > lstUserStory[0].CreatedDate.date() && lstUserStoryStatusHistory[0].CreatedDate.date() < Date.today()) {
+            
+                        UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                        firstStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].OldValue);
+                        firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                        firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                        firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                        firstStatusUpdate.endYear = lstUserStoryStatusHistory[0].CreatedDate.year();
+                        firstStatusUpdate.endMonth = lstUserStoryStatusHistory[0].CreatedDate.month();
+                        firstStatusUpdate.endDay = lstUserStoryStatusHistory[0].CreatedDate.day();
+            
+                        lstUserStoryStatusUpdate.add(firstStatusUpdate);
+                        
+                        UserStoryStatusUpdate secondStatusUpdate = new UserStoryStatusUpdate();
+                            
+                        secondStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                        secondStatusUpdate.startYear = lstUserStoryStatusHistory[0].CreatedDate.year();
+                        secondStatusUpdate.startMonth = lstUserStoryStatusHistory[0].CreatedDate.month();
+                        secondStatusUpdate.startDay = lstUserStoryStatusHistory[0].CreatedDate.day();
+                        secondStatusUpdate.endYear = lstUserStoryStatusHistory[i+1].CreatedDate.year();
+                        secondStatusUpdate.endMonth = lstUserStoryStatusHistory[i+1].CreatedDate.month();
+                        secondStatusUpdate.endDay = lstUserStoryStatusHistory[i+1].CreatedDate.day();
+            
+                        lstUserStoryStatusUpdate.add(secondStatusUpdate);
+                    }
+                    //else if the first Status update occurred on the user story creation date and before today() 
+                    else if(lstUserStoryStatusHistory[0].CreatedDate.date() == lstUserStory[0].Createddate.date() && lstUserStoryStatusHistory[0].CreatedDate.date() < Date.today()) {
+                
+                        UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                        firstStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                        firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                        firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                        firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                        firstStatusUpdate.endYear = lstUserStoryStatusHistory[i+1].CreatedDate.year();
+                        firstStatusUpdate.endMonth = lstUserStoryStatusHistory[i+1].CreatedDate.month();
+                        firstStatusUpdate.endDay = lstUserStoryStatusHistory[i+1].CreatedDate.day();
+            
+                        lstUserStoryStatusUpdate.add(firstStatusUpdate);
+            
+                    }
+                    
+                    //else if the first Status update occurred on the user story creation date and on today()
+                    else if(lstUserStoryStatusHistory[0].CreatedDate.date() == lstUserStory[0].Createddate.date() && lstUserStoryStatusHistory[0].CreatedDate.date() == Date.today()) {
+                
+                        UserStoryStatusUpdate firstStatusUpdate = new UserStoryStatusUpdate();
+                    
+                        firstStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[0].NewValue);
+                        firstStatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+                        firstStatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+                        firstStatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+                        firstStatusUpdate.endYear = Date.today().year();
+                        firstStatusUpdate.endMonth = Date.today().month();
+                        firstStatusUpdate.endDay = Date.today().day() + 1;
+            
+                        lstUserStoryStatusUpdate.add(firstStatusUpdate);
+            
+                    }
+                }
+                
+                //for the last status update 
+                else if(i == lstUserStoryStatusHistory.size() - 1) {
+                    
+                    system.debug('got here 4');
+                    
+                    //if the last Status update occurred before today()
+                    if(lstUserStoryStatusHistory[i].CreatedDate.date() < Date.today()) {
+                    
+                    system.debug('got here 5');
+                    
+                        UserStoryStatusUpdate lastStatusUpdate = new UserStoryStatusUpdate();
+                    
+                        lastStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[i].NewValue);
+                        lastStatusUpdate.startYear = lstUserStoryStatusHistory[i].CreatedDate.year();
+                        lastStatusUpdate.startMonth = lstUserStoryStatusHistory[i].CreatedDate.month();
+                        lastStatusUpdate.startDay = lstUserStoryStatusHistory[i].CreatedDate.day();
+                        lastStatusUpdate.endYear = Date.today().year();
+                        lastStatusUpdate.endMonth = Date.today().month();
+                        lastStatusUpdate.endDay = Date.today().day();
+            
+                        lstUserStoryStatusUpdate.add(lastStatusUpdate);
+                        
+                    }
+                    //else if the last Status update occurred today()
+                    else if(lstUserStoryStatusHistory[i].CreatedDate.date() == Date.today()) {
+                
+                    system.debug('got here 6');
+                    
+                        UserStoryStatusUpdate lastStatusUpdate = new UserStoryStatusUpdate();
+                    
+                        lastStatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[i].NewValue);
+                        lastStatusUpdate.startYear = lstUserStoryStatusHistory[i].CreatedDate.year();
+                        lastStatusUpdate.startMonth = lstUserStoryStatusHistory[i].CreatedDate.month();
+                        lastStatusUpdate.startDay = lstUserStoryStatusHistory[i].CreatedDate.day();
+                        lastStatusUpdate.endYear = Date.today().year();
+                        lastStatusUpdate.endMonth = Date.today().month();
+                        lastStatusUpdate.endDay = Date.today().day() + 1;
+            
+                        lstUserStoryStatusUpdate.add(lastStatusUpdate);
+            
+                    }
+                    
+                }
+                
+                //for all other updates inbetween...
+                else if(i > 0 && i < lstUserStoryStatusHistory.size() - 1) {
+                    
+                    //if the Status update occurred before today()
+                    if(lstUserStoryStatusHistory[i].CreatedDate.date() < Date.today()) {
+                    
+                    system.debug('got here 7');
+                    
+                        UserStoryStatusUpdate StatusUpdate = new UserStoryStatusUpdate();
+                    
+                        StatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[i].NewValue);
+                        StatusUpdate.startYear = lstUserStoryStatusHistory[i].CreatedDate.year();
+                        StatusUpdate.startMonth = lstUserStoryStatusHistory[i].CreatedDate.month();
+                        StatusUpdate.startDay = lstUserStoryStatusHistory[i].CreatedDate.day();
+                        StatusUpdate.endYear = lstUserStoryStatusHistory[i+1].CreatedDate.year();
+                        StatusUpdate.endMonth = lstUserStoryStatusHistory[i+1].CreatedDate.month();
+                        StatusUpdate.endDay = lstUserStoryStatusHistory[i+1].CreatedDate.day();
+            
+                        lstUserStoryStatusUpdate.add(StatusUpdate);
+                        
+                    }
+                    
+                    //else if the Status update occurred after on the user story creation date and before today() 
+                    
+                    
+                    //else if the Status update occurred today()
+                    if(lstUserStoryStatusHistory[i].CreatedDate.date() == Date.today()) {
+                    
+                    system.debug('got here 8');
+                    
+                        UserStoryStatusUpdate StatusUpdate = new UserStoryStatusUpdate();
+                    
+                        StatusUpdate.status = String.valueOf(lstUserStoryStatusHistory[i].NewValue);
+                        StatusUpdate.startYear = lstUserStoryStatusHistory[i].CreatedDate.year();
+                        StatusUpdate.startMonth = lstUserStoryStatusHistory[i].CreatedDate.month();
+                        StatusUpdate.startDay = lstUserStoryStatusHistory[i].CreatedDate.day();
+                        StatusUpdate.endYear = Date.today().year();
+                        StatusUpdate.endMonth = Date.today().month();
+                        StatusUpdate.endDay = Date.today().day()+1;
+            
+                        lstUserStoryStatusUpdate.add(StatusUpdate);
+                        
+                    }
+                }
+                
+               
+            }    
+        }
+        
+        //CASE: there are no status field history updates
+        if(lstUserStoryStatusHistory.size() == 0) {
+        
+            UserStoryStatusUpdate StatusUpdate = new UserStoryStatusUpdate();
+                    
+            StatusUpdate.status = 'New';
+            StatusUpdate.startYear = lstUserStory[0].CreatedDate.year();
+            StatusUpdate.startMonth = lstUserStory[0].CreatedDate.month();
+            StatusUpdate.startDay = lstUserStory[0].CreatedDate.day();
+            StatusUpdate.endYear = Date.today().year();
+            StatusUpdate.endMonth = Date.today().month();
+            StatusUpdate.endDay = Date.today().day()+1;
+            
+            lstUserStoryStatusUpdate.add(StatusUpdate);
+        }
+        
+        return (lstUserStoryStatusUpdate);
+    } 
+    
+    
+    
+    global class UserStoryStatusUpdate {
+        
+        string status;
+        integer startYear;
+        integer startMonth;
+        integer startDay;
+        integer endYear;
+        integer endMonth;
+        integer endDay;
+        
+    }
+        
+}

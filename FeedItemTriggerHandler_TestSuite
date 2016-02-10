@@ -1,0 +1,221 @@
+/*
+Name:  FeedItemTriggerHandler_TestSuite.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+-------
+Unit test suite for the FeedItemTriggerHandler Class
+-------
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date        Detail
+0.1  Clarasys       2015-06-18  Initial class development
+0.2  Clarasys       2015-06-24  Added negative test case
+0.3  Clarasys       2015-08-12  Added Test Case to test After Insert context override (to insert FeedItem comment with @mentions preserved)
+0.4  Clarasys       2015-08-17  Refactored to test afterInsert() context, preserving @mentions in the original post and appending the sprinter__Title__c field
+*/
+
+@isTest
+public with sharing class FeedItemTriggerHandler_TestSuite {
+
+/*
+=====================
+Positive Test Cases
+=====================
+*/
+
+ /*
+  * Method: test_FeedItemTriggerHandler_updateStoryFeedItemBody_single to test FeedItemTriggerHandler beforeInsert() override method
+  * Test Data Setup: One sprinter__User_Story__c record, single FeedItem linked to the User Story 
+  * Test Conditions: Insert the FeedItem record
+  * Expected Outcome: the FeedItem body is updated to include the User Story title__c field
+  */
+    @isTest(Seealldata=true) static void test_FeedItemTriggerHandler_updateStoryFeedItemBody_single(){    
+    
+        //create test data
+        sprinter__Project__c testProject = new sprinter__Project__c(Name = 'Test Project', sprinter__Status__c = 'Active');
+        insert testProject;
+        sprinter__User_Story__c testUserStory = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID, sprinter__Title__c = 'Test User Story Title');
+        insert testUserStory;
+        FeedItem testFeedItem = new FeedItem(parentId = testUserStory.ID, body = 'Test Post', type = 'TextPost');
+    
+        Test.startTest(); //start Test
+    
+        insert testFeedItem;
+        
+        //query the inserted record
+        List<FeedItem> insertedFeedItem = new List<FeedItem>([SELECT ID, body, parentId
+                                                              FROM FeedItem
+                                                              WHERE Id = : testFeedItem.Id
+                                                              LIMIT 1]);
+        
+        //add assertions
+        system.assert(insertedFeedItem[0].body.contains('-- RELATED TO STORY: Test User Story Title --'));
+    
+        Test.stopTest(); //stop test    
+    
+    }
+ 
+ /*
+  * Method: test_FeedItemTriggerHandler_updateStoryFeedItemBody_bulk to test FeedItemTriggerHandler beforeInsert() override method for bulk transaction
+  * Test Data Setup: One sprinter__User_Story__c record, 100 FeedItem linked to the User Story 
+  * Test Conditions: Insert the FeedItem records
+  * Expected Outcome: the FeedItem body of each record is updated to include the User Story title__c field
+  */
+    @isTest(Seealldata=true) static void test_FeedItemTriggerHandler_updateStoryFeedItemBody_bulk(){    
+    
+        //create test data
+        sprinter__Project__c testProject = new sprinter__Project__c(Name = 'Test Project', sprinter__Status__c = 'Active');
+        insert testProject;
+        sprinter__User_Story__c testUserStory = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID, sprinter__Title__c = 'Test User Story Title');
+        insert testUserStory;
+        
+        List<FeedItem> lstTestFeedItem = new List<FeedItem>();
+        
+        for(Integer i = 0 ; i < 100 ; i++) {
+            FeedItem testFeedItem = new FeedItem(parentId = testUserStory.ID, body = 'Test Post', type = 'TextPost');
+            lstTestFeedItem.add(testFeedItem);
+        }
+        
+        Test.startTest(); //start Test
+    
+        insert lstTestFeedItem;
+        
+        //query the inserted record
+        List<FeedItem> lstInsertedFeedItems = new List<FeedItem>([SELECT ID, body, parentId
+                                                                  FROM FeedItem
+                                                                  WHERE Id in : lstTestFeedItem]);
+        
+        //add assertions
+        system.assertEquals(100, lstInsertedFeedItems.size());
+        
+        for (Integer j = 0 ; j < lstInsertedFeedItems.size() ; j++) {
+            system.assert(lstInsertedFeedItems[j].body.contains('-- RELATED TO STORY: Test User Story Title --'));
+        }
+        
+        Test.stopTest(); //stop test    
+    
+    }
+    
+ /*
+  * Method: test_FeedItemTriggerHandler_updateStoryFeedItemBody_differentStories to test FeedItemTriggerHandler beforeInsert() override method
+  * Test Data Setup: Two sprinter__User_Story__c record, 1 FeedItem linked to each of the User Stories 
+  * Test Conditions: Insert the FeedItem records
+  * Expected Outcome: the FeedItem body of each record is updated to include the User Story title__c field of the related story
+  */   
+    @isTest(Seealldata=true) static void test_FeedItemTriggerHandler_updateStoryFeedItemBody_differentStories(){    
+    
+        //create test data
+        sprinter__Project__c testProject = new sprinter__Project__c(Name = 'Test Project', sprinter__Status__c = 'Active');
+        insert testProject;
+        sprinter__User_Story__c testUserStory1 = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID, sprinter__Title__c = 'Test User Story 1 Title');
+        insert testUserStory1;
+        sprinter__User_Story__c testUserStory2 = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID, sprinter__Title__c = 'Test User Story 2 Title');
+        insert testUserStory2;
+        
+        List<FeedItem> lstTestFeedItem = new List<FeedItem>();
+        lstTestFeedItem.add(new FeedItem(parentId = testUserStory1.ID, body = 'Test Post', type = 'TextPost'));
+        lstTestFeedItem.add(new FeedItem(parentId = testUserStory2.ID, body = 'Test Post', type = 'TextPost'));
+        
+        Test.startTest(); //start Test
+    
+        insert lstTestFeedItem;
+        
+        //query the inserted record
+        List<FeedItem> lstInsertedFeedItems = new List<FeedItem>([SELECT ID, body, parentId
+                                                                  FROM FeedItem
+                                                                  WHERE Id in : lstTestFeedItem]);
+        
+        //add assertions
+        system.assertEquals(2, lstInsertedFeedItems.size());
+        
+        system.assert(lstInsertedFeedItems[0].body.contains('-- RELATED TO STORY: Test User Story 1 Title --'));
+        system.assert(lstInsertedFeedItems[1].body.contains('-- RELATED TO STORY: Test User Story 2 Title --'));
+        
+        Test.stopTest(); //stop test    
+    
+    }
+ 
+ /*
+  * Method: test_FeedItemTriggerHandler_insertStoryFeedItemCommentwithMentions to test FeedItemTriggerHandler afterInsert() override method
+  * Test Data Setup: One sprinter__User_Story__c record, 1 FeedItem linked to the User Story with @mentions included in the text 
+  * Test Conditions: Insert the FeedItem record with a body containing @mentions
+  * Expected Outcome: a FeedComment is added (related to the FeedItem) which contains the @mentions
+  */
+/*  
+    @isTest(Seealldata=true) static void test_FeedItemTriggerHandler_insertStoryFeedItemCommentwithMentions(){
+       
+        //create test data
+        sprinter__Project__c testProject = new sprinter__Project__c(Name = 'Test Project', sprinter__Status__c = 'Active');
+        insert testProject;
+        sprinter__User_Story__c testUserStory = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID, sprinter__Title__c = 'Test User Story Title');
+        insert testUserStory;
+        FeedItem testFeedItem = new FeedItem(parentId = testUserStory.ID, body = 'Test Post with @Mentions @Kristian Jenner', type = 'TextPost');
+        
+    Test.startTest(); //start Test
+    
+        insert testFeedItem;
+        
+        //query the inserted FeedItem record
+        List<FeedItem> insertedFeedItem = new List<FeedItem>([SELECT Id, body, parentId
+                                                              FROM FeedItem
+                                                              WHERE Id = : testFeedItem.Id
+                                                              LIMIT 1]);
+        
+        //query the inserted FeedComment record
+        List<FeedComment> insertedFeedComment = new List<FeedComment>([SELECT Id, CommentBody
+                                     FROM Feedcomment
+                                     WHERE FeedItemId = :testFeedItem.Id
+                                     LIMIT 1]);
+    
+        //add assertions
+        system.assertEquals('Test User Story Title: Test Post with @Mentions @Kristian Jenner', insertedFeedItem[0].body);
+    system.assertEquals('FYI: @Kristian Jenner,', insertedFeedComment[0].CommentBody);
+  
+        Test.stopTest(); //stop test  
+      
+  }
+*/
+  
+/*
+=====================
+Negative Test Cases
+=====================
+*/ 
+ /*
+  * Method: test_FeedItemTriggerHandler_updateStoryFeedItemBody_noTitleSet to test FeedItemTriggerHandler beforeInsert() override method
+  * Test Data Setup: One sprinter__User_Story__c record (with no title), FeedItem linked to the User Stories 
+  * Test Conditions: Insert the FeedItem records
+  * Expected Outcome: the FeedItem body is not updated
+  */   
+    @isTest(Seealldata=true) static void test_FeedItemTriggerHandler_updateStoryFeedItemBody_noTitleSet(){    
+    
+        //create test data
+        sprinter__Project__c testProject = new sprinter__Project__c(Name = 'Test Project', sprinter__Status__c = 'Active');
+        insert testProject;
+        sprinter__User_Story__c testUserStory = new sprinter__User_Story__c(sprinter__Project__c = testProject.ID); //no title set
+        insert testUserStory;
+        
+        List<FeedItem> lstTestFeedItem = new List<FeedItem>();
+        lstTestFeedItem.add(new FeedItem(parentId = testUserStory.ID, body = 'Test Post', type = 'TextPost'));
+        
+        Test.startTest(); //start Test
+    
+        insert lstTestFeedItem;
+        
+        //query the inserted record
+        List<FeedItem> lstInsertedFeedItems = new List<FeedItem>([SELECT ID, body, parentId
+                                                                  FROM FeedItem
+                                                                  WHERE Id in : lstTestFeedItem]);
+        
+        //add assertions
+        system.assertEquals('Test Post', lstInsertedFeedItems[0].body);
+        
+        Test.stopTest(); //stop test    
+    
+    }
+    
+    
+}

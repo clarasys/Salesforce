@@ -1,0 +1,65 @@
+<apex:page standardController="sprinter__User_Story__c" extensions="UserStoryStatusGoogleChartControllerExt" standardStylesheets="False" docType="html-5.0">
+
+<apex:stylesheet value="{!URLFOR($Resource.SLDS092, 'assets/styles/salesforce-lightning-design-system-vf.css')}" />
+
+<head>
+<!-- Page Functions -->
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+
+    <script type="text/javascript">
+        // Load the Visualization API and the Timeline package.
+        
+        google.load("visualization", "1",{packages: ['timeline']});
+        google.setOnLoadCallback(drawChart);
+        
+        var sprintId = '{!sprinter__User_Story__c.Id}';
+        
+        function drawChart() {         
+          // controller : UserStoryStatusGoogleChartControllerExt
+          // method : GetUserStoryStatusHistory
+            UserStoryStatusGoogleChartControllerExt.GetUserStoryStatusHistory(sprintId,
+                function(result, event){  
+                    // Prepare table model for chart with columns
+                    var container = document.getElementById('user_story_status_timeline');
+                    var chart = new google.visualization.Timeline(container);
+                    var data = new google.visualization.DataTable();
+
+                    data.addColumn({ type: 'string', id: 'Id' });
+                    data.addColumn({ type: 'string', id: 'Status' });
+                    data.addColumn({ type: 'date', id: 'Start' });
+                    data.addColumn({ type: 'date', id: 'End' });    
+                     
+                    // add rows from the remoting results
+                    for(var i =0; i<result.length;i++){
+                        var r = result[i];
+                        data.addRow([r.status, r.status, new Date(r.startYear, r.startMonth, r.startDay), new Date(r.endYear, r.endMonth, r.endDay)]); 
+                    }
+                    
+                    var options = {
+                        backgroundColor: '#EEF1F6',
+                        colors: ['#0C8EFF', '#0070D2', '#16325C', '#002B36'],
+                        animation: {"startup": true},
+                        timeline: { rowLabelStyle: {fontName: 'Helvetica', fontSize: 10, color: '#16325C' },
+                                    barLabelStyle: {fontName: 'Helvetica', fontSize: 10, color: '#16325C' }, 
+                                    showRowLabels: true,
+                                    groupByRowLabel: true,
+                                    
+                        }
+                    };
+
+                    chart.draw(data, options);
+                    
+                }, {escape:true});
+          } 
+    </script>
+</head>
+
+<body>
+    <h1>User Story Status Timeline</h1>
+    <div id="user_story_status_timeline" style="height: 250px;" width="95%"/>
+</body>
+
+<!-- Styles-->
+
+</apex:page>
+                                        

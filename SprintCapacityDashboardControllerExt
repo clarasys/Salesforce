@@ -1,0 +1,65 @@
+/*
+Name:  SprintCapacityDashboardControllerExt.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+Class Description:
+=========================================================================================================
+-------
+Controller Extension Class contains properties used by the GoogleChartAPI in the sprinter_SprintCapacityPlanning VF page
+-------
+=========================================================================================================
+History
+------- 
+Ver. Author         Date           Detail
+0.1  Clarasys       2015-10-26     Initial class development.
+0.2  Clarasys       2015-11-30     Additional Properties added for use in the sprinter_SprintCapacityPlanning page
+*/
+
+public class SprintCapacityDashboardControllerExt{
+
+    //Controller Extension Properties
+    public final sprinter__Sprint__c s; // variable to hold the sprinter__Sprint__c
+    public decimal sprintCapacity {get; set;}
+    public decimal sprintEstimatedEffort {get; set;}
+    public decimal sprintCapacityPercentage {get; set;}
+    public decimal sprintEffortRemaining {get; set;}
+    
+    
+    // The extension constructor initializes the private member variable 's' by using the getRecord method from the standard controller
+    public SprintCapacityDashboardControllerExt(ApexPages.StandardController sController) {
+       this.s= (sprinter__Sprint__c)sController.getRecord();
+       FetchChartData();
+    }
+
+
+//=======================================================================================================
+//Method - void
+//@name FetchChartData()
+//@param none
+//@return void 
+//@description : returns chart data to be used in the Sprint Capacity Dashboard (Google Chart)
+//=======================================================================================================
+
+    public void FetchChartData() {
+        
+        //query the Sprint_Scrum_Capacity__c and Total_Estimated_Effort__c fields from the sprinter__Sprint__c record to populate the dhart data
+        List<sprinter__Sprint__c> sprint = new List<sprinter__Sprint__c>([SELECT Id, Sprint_Scrum_Capacity__c, Total_Estimated_Effort__c, Actual_Effort_Remaining__c
+                                                                          FROM sprinter__Sprint__c
+                                                                          WHERE Id = : s.Id]
+                                                                        );
+        //assign the sprintCapacity and sprintEstimatedEffort values
+        sprintCapacity = sprint[0].Sprint_Scrum_Capacity__c;
+        sprintEstimatedEffort = sprint[0].Total_Estimated_Effort__c;
+        sprintEffortRemaining = sprint[0].Actual_Effort_Remaining__c;
+        
+        if(sprintCapacity > 0) {
+            sprintCapacityPercentage = 100*(sprintEstimatedEffort/sprintCapacity);
+        }
+        else{
+            sprintCapacityPercentage = 100;
+        }
+        
+    }
+
+        
+}

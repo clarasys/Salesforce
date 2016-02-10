@@ -1,0 +1,143 @@
+/*
+Name:  FeedItemTriggerHandler.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+-------
+Class extends the TriggerHandler Class with overide methods for context specific trigger actions which 
+are invoked by the FeedItem trigger
+This follows the Salesforce Trigger Handler design pattern
+-------
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date        Detail
+0.1  Clarasys       2015-06-15  Initial class development, including beforeInsert() override and updateStoryFeedItemBody() private void method
+0.2  Clarasys       2015-06-24  Fixed bug with bulk insert of FeedItems
+0.3  Clarasys       2015-07-31  Added afterInsert() override and insertStoryFeedItemCommentwithMentions() method to fix bug in removing @mentions in the FeedItem
+0.4  Clarasys       2015-08-11  Added getMapFeedItemIdMentionedUsers() Private helper method to help reduce chances of SOQL Limits being reached
+0.5  Clarasys       2015-08-17  Refactored to remove beforeIntert() override, modified updateStoryFeedItemBody to include call to ConnectApiHelper.createFeedItemInputFromBody() and ConnectApi.ChatterFeeds.updateFeedElement to update the FeedItem body whilst preserving @mentions
+*/
+
+public class FeedItemTriggerHandler extends TriggerHandler {
+
+    private List<FeedItem> lstNewFeedItem;
+    
+    public FeedItemTriggerHandler() {
+        this.lstNewFeedItem = (List<FeedItem>) Trigger.new;
+    }
+/*
+=========================================================================================================
+CONTEXT OVERRIDES 
+=========================================================================================================
+*/ 
+    public override void afterInsert() {
+        /*
+        1. FILTER Trigger.new for FeedItems related to sprinter__User_Story__c records
+        */
+        
+        //get the key prefix for the sprinter__User_Story__c object via a describe call
+        String userStoryKeyPrefix = sprinter__User_Story__c.sObjectType.getDescribe().getKeyPrefix();
+    
+        //construct Map of FeedItems and associated parentIds (indexed by common integer) which is filtered by parentIds related to a sprinter__User_Story__c, to only update FeedItems related to User Stories
+        Map<Integer,FeedItem> mapStoryFeedItems = new Map<Integer,FeedItem>();
+        Map<Integer,ID> mapParentIds = new Map<Integer,ID>();
+        
+        Integer i = 0; //loop counter
+        for (FeedItem f : lstNewFeedItem) {
+            String parentId = f.parentId;
+            //compare the start of the 'parentID' field to the sprinter__User_Story__c key prefix to restrict the trigger to act on posts made to the sprinter__User_Story__c object.
+            if (parentId.startsWith(userStoryKeyPrefix)) {            
+                mapStoryFeedItems.put(i, f);
+                mapParentIDs.put(i, parentId);
+            }
+            i++;
+        }
+        
+        //call the updateStoryFeedItemBody() method for the filtered FeedItems and associated parentIds
+        if (mapStoryFeedItems.size() > 0) {
+            updateStoryFeedItemBody(mapStoryFeedItems, mapParentIds);
+        }
+    }
+
+/*
+=========================================================================================================
+PRIVATE METHODS 
+=========================================================================================================
+*/
+/*
+=========================================================================================================
+Method -- private void
+@name updateStoryFeedItemBody
+@param Map<Integer,FeedItem> mapFeedItems - Map of FeedItems included in Trigger.new which relate
+       to the sprinter__User_Story__c object
+       Map<Integer, ID> mapParentIDs - Map of associated parentIDs for the FeedItems included in 
+       Trigger.new which relate to the sprinter__User_Story__c object 
+@return n/a 
+=========================================================================================================
+*/
+    private void updateStoryFeedItemBody(Map<Integer,FeedItem> mapFeedItems, Map<Integer,ID> mapParentIDs) {
+            
+        if (mapFeedItems.size() > 0) {
+          
+            List<sprinter__User_Story__c> lstRelatedUserStories = new List<sprinter__User_Story__c>([SELECT Id, sprinter__Title__c
+                                                                                                     FROM sprinter__User_Story__c
+                                                                                                     WHERE Id in : mapParentIDs.values()]);
+        
+            Map<Id,sprinter__User_Story__c> mapRelatedUserStories = new Map<Id,sprinter__User_Story__c>();       
+            For (sprinter__User_Story__c s : lstRelatedUserStories) {
+                mapRelatedUserStories.put(s.Id, s);     
+            }
+            
+            //construct List of FeedItemIds, for FeedItems on Stories which have sprinter__Title__c != null 
+            List<String> lstUpdatedFeedItemIds = new List<String>();
+            
+            For (Integer i : mapFeedItems.keyset()) {
+                FeedItem f = mapFeedItems.get(i);
+                String storyTitle = mapRelatedUserStories.get(mapFeedItems.get(i).parentID).sprinter__Title__c;
+                if (storyTitle != null) {
+                    lstUpdatedFeedItemIds.add(f.Id);
+                }
+            }
+            
+            //get the FeedElements via the Chatter API and modify the FeedItem body to add an additional message segment wo include the related Story title (preserving the @mentions in the body) 
+            String communityId = Network.getNetworkId();
+
+            ConnectApi.BatchResult[] results = ConnectApi.ChatterFeeds.getFeedElementBatch(communityId, lstUpdatedFeedItemIds);
+
+            for (ConnectApi.BatchResult result : results) {
+                if (result.isSuccess()) {
+                    Object theResult = result.getResult();
+                    if (theResult instanceof ConnectApi.FeedElement) {
+                        ConnectApi.FeedElement item = (ConnectApi.FeedElement) theResult;
+                        
+                        ConnectApi.FeedItemInput input = ConnectApiHelper.createFeedItemInputFromBody(item.body);
+                        
+                        ConnectApi.TextSegmentInput textInput = new ConnectApi.TextSegmentInput();
+                        
+                        String storyTitle = mapRelatedUserStories.get(item.parent.Id).sprinter__Title__c;
+                        
+                        textInput.text = '\n\n -- RELATED TO STORY: ' + storyTitle +' --' ;
+
+                        input.body.messageSegments.add(textInput); //add messagesegment to the FeedItemInput (added at the end)
+
+                        // Update the feed item, Note - bulk update method is not supported currently in the ChatterFeeds class of the ConnectAPI.
+                        ConnectApi.ChatterFeeds.updateFeedElement(communityId, item.id, input);
+                    }
+                    else {
+                        // Do nothing. Posting other feed element types isn't supported.
+                    }
+                }
+                else {
+                    System.debug('Failure in batch feed element retrieval: ' + result.getErrorMessage());
+                }
+
+            }
+            
+        }
+
+    }
+    
+   
+}

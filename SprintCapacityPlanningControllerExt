@@ -1,0 +1,272 @@
+/*
+Name:  SprintCapacityPlanningControllerExt.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+Class Description:
+=========================================================================================================
+-------
+Controller Extension Class contains actions called from the sprinter_SprintCapacityPlanning VF page
+-------
+=========================================================================================================
+History
+------- 
+Ver. Author         Date           Detail
+0.1  Clarasys       2015-09-23     Initial class development.
+0.2  Clarasys       2015-09-29     Added public getter method getSprintCapacityZero()
+0.3  Clarasys       2015-10-05     Added private method getScrumTeamMemberAssignedEffort() called by DisplayScrumTeamMember.scrumTeamMemberAssignedEffort property
+*/
+
+public class SprintCapacityPlanningControllerExt{
+
+    public final sprinter__Sprint__c s; // variable to hold the sprinter__Sprint__c
+    
+    // The extension constructor initializes the private member variable 's' by using the getRecord method from the standard controller
+    public SprintCapacityPlanningControllerExt(ApexPages.StandardController sController) {
+       this.s= (sprinter__Sprint__c)sController.getRecord();
+    }
+
+//=======================================================================================================
+//Method - public getter
+//@name getSprint()
+//@param none
+//@return sprinter__Sprint__c 
+//@description : to get the sprinter__Sprint__c.Id based on the id URL parameter
+//=======================================================================================================
+    sprinter__Sprint__c sprint;
+    
+    public sprinter__Sprint__c getSprint() {
+        string sid = ApexPages.currentPage().getParameters().get('id');
+        if (sprint == Null) {
+            sprint = [SELECT Id, Scrum_Team__c, Capacity_Planning_Dashboard__c, Sprint_Scrum_Capacity__c
+                      FROM sprinter__Sprint__c
+                      WHERE id = :sid
+                      LIMIT 1];
+        }
+        return sprint;
+        
+    }
+    
+//=======================================================================================================
+//Method - public getter
+//@name getSprintCapacityZero()
+//@param none
+//@return boolean 
+//@description : returns TRUE if the sprint has no capacity associated with it, else returns FALSE
+//=======================================================================================================     
+    public Boolean getSprintCapacityZero() {
+                
+        sprinter__Sprint__c sprint = getSprint();
+        
+        if(sprint.Sprint_Scrum_Capacity__c == 0) {
+            return TRUE;
+        }
+        Else {
+            return FALSE;
+        }
+                
+    } 
+    
+//=======================================================================================================
+//Method - public getter
+//@name getNoAssociatedScrumTeam()
+//@param none
+//@return boolean 
+//@description : returns TRUE if the sprint has no Scrum Team associated with it, else returns FALSE
+//=======================================================================================================     
+    public Boolean getNoAssociatedScrumTeam() {
+                
+        sprinter__Sprint__c sprint = getSprint();
+        
+        if(sprint.Scrum_Team__c == null) {
+            return TRUE;
+        }
+        Else {
+            return FALSE;
+        }
+                
+    } 
+
+//=======================================================================================================
+//Method - public getter
+//@name getScrumTeamMembers()
+//@param none
+//@return List<DisplayScrumTeamMember> - reference to the DisplayScrumTeamMember inner class
+//@description : to get the List of clarasys_Scrum_Team_Member__c linked to the clarasys_Scrum_Team__c for which the sprinter__Sprint__c is associated with
+//=======================================================================================================    
+    public List<DisplayScrumTeamMember> lstDisplayScrumTeamMember; // list to hold the Scrum Team Members for the Scrum Team linked to the Sprint
+    
+    public List<DisplayScrumTeamMember> getDisplayScrumTeamMembers() {
+        sprinter__Sprint__c sprint = getSprint();
+        if (lstDisplayScrumTeamMember == null) {
+            lstDisplayScrumTeamMember = new List<DisplayScrumTeamMember>();
+            for (clarasys_Scrum_Team_Member__c stMember : [SELECT Id, name, Team_Members__r.Id, Team_Members__r.name, Team_Members__r.sprinter__User__r.SmallPhotoUrl
+                                                           FROM clarasys_Scrum_Team_Member__c
+                                                           WHERE Scrum_Team__c = :sprint.Scrum_Team__c]) {
+                lstDisplayScrumTeamMember.add(New DisplayScrumTeamMember(stMember, sprint));
+                
+            }
+        }
+        return lstDisplayScrumTeamMember;
+    }    
+    
+    // Inner class to hold display details of Scrum Team Members 
+    public class DisplayScrumTeamMember {
+        
+        private clarasys_Scrum_Team_Member__c sTM;
+        private sprinter__Sprint__c s;
+        public DisplayScrumTeamMember(clarasys_Scrum_Team_Member__c stMember, sprinter__Sprint__c sprint) {
+            this.sTM = stMember;
+            this.s = sprint;
+        }
+        
+        //Properties for use in the Visualforce view
+        public String scrumTeamMemberId {
+            get{return sTM.Id;}
+        } 
+        public String scrumTeamMemberSprintId {
+            get{return s.Id;}
+        }
+        public String scrumTeamMemberName {
+            get{return sTM.Team_Members__r.name;}
+        } 
+        public String scrumTeamMemberPhoto {
+            get{return sTM.Team_Members__r.sprinter__User__r.SmallPhotoUrl;}
+        } 
+        public Decimal scrumTeamMemberCapacity {
+            get{return getScrumTeamMemberCapacity(sTM.Id, s.Id);}
+        }
+        public Decimal scrumTeamMemberAssignedEffort {
+            get{return getScrumTeamMemberAssignedEffort(sTM.Team_Members__r.Id, s.Id);}
+        }
+        public Decimal scrumTeamMemberUpdatedCapacity { get; set; }
+        
+    }
+
+//=======================================================================================================
+//Method - public getter/setter
+//@name DisplayScrumTeamMembersTotalCapacity()
+//@param N/A
+//@return null
+//@description : TBC
+//=======================================================================================================    
+    public Decimal displayScrumTeamMembersTotalCapacity { get; set; }
+    
+    public void setDisplayScrumTeamMembersTotalCapacity() {
+            if(displayScrumTeamMembersTotalCapacity == null) {
+                displayScrumTeamMembersTotalCapacity = 0.00;
+            }
+            for(DisplayScrumTeamMember d : lstDisplayScrumTeamMember) {
+                    this.displayScrumTeamMembersTotalCapacity = displayScrumTeamMembersTotalCapacity + d.scrumTeamMemberUpdatedCapacity;    
+            }
+    }
+    
+//=======================================================================================================
+//Method - public action
+//@name updateSprintCapacity
+//@param N/A
+//@return null
+//@description : updates/inserts clarasys_Sprint_Scrum_Team_Member__c records associated with the sprinter__Sprint__c,with the capacity set by the VF page 
+//=======================================================================================================    
+    public PageReference updateSprintCapacity() {
+        
+        Id sprintId = getSprint().Id;
+        
+        //1) query for clarasys_Sprint_Scrum_Team_Member__c records linked to the sprinter__Sprint__c record and assign to a map of clarasys_Scrum_Team_Member__c.Id, clarasys_Sprint_Scrum_Team_Member__c
+        map<Id, clarasys_Sprint_Scrum_Team_Member__c> mapScrumTeamMemberId_SprintScrumTeamMember = new map<Id, clarasys_Sprint_Scrum_Team_Member__c>();
+        
+        List<clarasys_Sprint_Scrum_Team_Member__c> lstExistingSprintScrumTeamMembers = new List<clarasys_Sprint_Scrum_Team_Member__c>([SELECT Id, Capacity__c, Scrum_Team_Member__c
+                                                                                                                                       FROM clarasys_Sprint_Scrum_Team_Member__c
+                                                                                                                                       WHERE Sprint__c = :sprintId]
+                                                                                                                                     );
+        for(clarasys_Sprint_Scrum_Team_Member__c s : lstExistingSprintScrumTeamMembers) {
+            mapScrumTeamMemberId_SprintScrumTeamMember.put(s.Scrum_Team_Member__c,s);
+        }
+        
+        //2) create two lists - one of new records to insert, and the other of records to update. compare the lstDisplayScrumTeamMember list agsint the mapScrumTeamMemberId_SprintScrumTeamMember
+        list<clarasys_Sprint_Scrum_Team_Member__c> lstSprintScrumTeamMembersForUpdate = new List<clarasys_Sprint_Scrum_Team_Member__c>();
+        list<clarasys_Sprint_Scrum_Team_Member__c> lstSprintScrumTeamMembersforInsert = new List<clarasys_Sprint_Scrum_Team_Member__c>();
+        
+        for(DisplayScrumTeamMember d : lstDisplayScrumTeamMember) {
+            if(mapScrumTeamMemberId_SprintScrumTeamMember.containsKey(d.scrumTeamMemberId)) {
+                clarasys_Sprint_Scrum_Team_Member__c sprintScrumteamMemberForUpdate = new clarasys_Sprint_Scrum_Team_Member__c(Id = mapScrumTeamMemberId_SprintScrumTeamMember.get(d.scrumTeamMemberId).Id, Scrum_Team_Member__c = d.scrumTeamMemberId, Sprint__c = d.scrumTeamMemberSprintId, Capacity__c = d.scrumTeamMemberUpdatedCapacity);
+                lstSprintScrumTeamMembersForUpdate.add(sprintScrumteamMemberForUpdate);
+            }
+            else {
+                clarasys_Sprint_Scrum_Team_Member__c sprintScrumteamMemberForInsert = new clarasys_Sprint_Scrum_Team_Member__c(Scrum_Team_Member__c = d.scrumTeamMemberId, Sprint__c = d.scrumTeamMemberSprintId, Capacity__c = d.scrumTeamMemberUpdatedCapacity);
+                lstSprintScrumTeamMembersForInsert.add(sprintScrumteamMemberForInsert); 
+            }
+        }
+        
+        //3) update the existing records with the new capacity values
+        update lstSprintScrumTeamMembersForUpdate;
+        
+        //4) insert the new records with the capacity values
+        insert lstSprintScrumTeamMembersForInsert;
+        
+        
+        sprinter__Sprint__c sprint = getSprint(); //call getSprint() getter after the Capacity has been changed, so that the google chart refreshes
+        
+        return null; //no page redirect required
+    }   
+
+//=======================================================================================================
+//Method - private 
+//@name getScrumTeamMemberCapacity
+//@param Id scrumTeamMemberId, Id sprintId 
+//@return Decimal capacity
+//@description : returns the capacity of the Scrum Team Member that is linked to the Sprint, else, if the Scrum Team Member is not linked to the Sprint it returns 0 
+//=======================================================================================================   
+    private static Decimal getScrumTeamMemberCapacity(Id scrumTeamMemberId, Id sprintId) {
+        //Query clarasys_Sprint_Team_Member__c where Scrum_Team_Member__c = :scrumTeamMemberId
+        List<clarasys_Sprint_Scrum_Team_Member__c> lstSprintScrumTeamMember = new List<clarasys_Sprint_Scrum_Team_Member__c>([SELECT Id, Capacity__c
+                                                                                                                              FROM clarasys_Sprint_Scrum_Team_Member__c
+                                                                                                                              WHERE Scrum_Team_Member__r.Id = :scrumTeamMemberId
+                                                                                                                              AND Sprint__r.Id = :sprintId
+                                                                                                                              LIMIT 1]
+                                                                                                                            );
+        //return the capacity if there is a clarasys_Sprint_Scrum_Team_Member__c already associated 
+        if(lstSprintScrumTeamMember.size() > 0) {
+            Decimal capacity = lstSprintScrumTeamMember[0].Capacity__c;
+            return capacity;
+        }   
+        else{
+            Decimal capacity = 0.00;
+            return capacity;
+        }
+        
+    }
+   
+//=======================================================================================================
+//Method - private 
+//@name getScrumTeamMemberAssignedEffort
+//@param Id teamMemberId, Id sprintId 
+//@return Decimal assignedeffort
+//@description : returns the Effort of Tasks in the sprint owned by the Scrum Team Member, else, if the Scrum Team Member is not linked to the Sprint it returns 0 
+//=======================================================================================================   
+    private static Decimal getScrumTeamMemberAssignedEffort(Id teamMemberId, Id sprintId) {
+        
+        //Query sprinter__Element__c Tasks where sprinter__Element__c.sprinter__User_Story__r.Sprinter__Sprint__r.Id = :sprintId and sprinter__Owner__r.Id = :teamMemberId
+        
+        List<sprinter__Element__c> lstScrumTeamMemberTasks = new List<sprinter__Element__c>([SELECT Id, Effort__c
+                                                                                             FROM sprinter__Element__c
+                                                                                             WHERE sprinter__Element__c.sprinter__User_Story__r.Sprinter__Sprint__r.Id = :sprintId
+                                                                                             AND sprinter__Owner__r.Id = :teamMemberId]
+                                                                                           );
+        //return the assigned effort if there are Tasks assigned to the TeamMember 
+        if(lstScrumTeamMemberTasks.size() > 0) {
+            Decimal assignedeffort = 0.00;
+            for(sprinter__Element__c t : lstScrumTeamMemberTasks) {
+                assignedeffort = assignedeffort + t.effort__c;
+            }
+            return assignedeffort;
+        }   
+        else{
+            Decimal assignedeffort = 0.00;
+            return assignedeffort;
+        }
+        
+    }    
+    
+    
+        
+}

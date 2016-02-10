@@ -1,0 +1,86 @@
+/*
+Name:  StoryServiceImpl.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+updateStoryStatus:
+-------
+Class contains Service methods to be called on the Story sObject, forming the StoryServiceImpl Class
+-------
+=========================================================================================================
+History
+------- 
+Ver. Author         Date        Detail
+1.0  Clarasys       2015-03-01  Initial class development - updateStoryStatus Method created.
+1.1  Clarasys    2015-03-04  moveToProductBacklog method added
+*/
+
+Global with sharing class StoryServiceImpl {
+
+//=======================================================================================================
+//@Method:  -- webservice
+//@name: updateStoryStatus
+//@param: List<String> lstStoryId - Array of Story Ids, String stStatus
+//@return: Boolean 
+//=======================================================================================================
+  webservice static Boolean updateStoryStatus (List<String> lstStoryId, String stStatus) {
+    
+    //Query for Stories with Id in lstStoryId 
+    Try {
+        List<sprinter__User_Story__c> lstStories = [SELECT Id, sprinter__Status__c 
+                                             FROM sprinter__User_Story__c 
+                                             WHERE Id IN : lstStoryId];
+        If (lstStories.isEmpty()) {
+            return (false);
+        }
+        
+        //Loop through the lstStories list and update the Status field for each to stStatus
+        for (sprinter__User_Story__c st : lstStories) {
+            st.sprinter__Status__c = stStatus; 
+        }
+        
+        If (lstStories.size() > 0) {
+            try { 
+                database.update(lstStories); //DML will update all or none, in cas of any error the transaction will be rolled back
+            } 
+            catch (Exception e) { 
+                system.debug('Exception caught! :' + e) ;
+                return (false);
+            }        
+        } 
+    }
+    catch (Exception e) {
+        return (false) ;
+    }  
+    return (true); //Return 'true' if the Stories are updated without error 
+  } //End Method
+    
+//=======================================================================================================
+//@Method:  -- webservice
+//@name: moveToProductBacklog
+//@param: List<String> lstStoryId - Array of Story Ids
+//@return: Boolean 
+//=======================================================================================================
+  webservice static Boolean moveToProductBacklog (List<String> lstStoryId) {
+    
+    //Query for Stories with Id in lstStoryId 
+    Try {
+        List<sprinter__User_Story__c> lstStories = [SELECT Id, sprinter__Status__c 
+                                             FROM sprinter__User_Story__c 
+                                             WHERE Id IN : lstStoryId];
+        If (lstStories.isEmpty()) {
+            return (false);
+        }
+    
+    
+    
+    
+    }
+    catch (Exception e) {
+        return (false) ;
+    }  
+    return (true); //Return 'true' if the Stories are updated without error 
+  }
+
+}

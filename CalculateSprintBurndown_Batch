@@ -1,0 +1,207 @@
+/*
+Name:  CalculateSprintBurndown_Batch.cls
+Type: Apex Batch Class
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+Batch class to calculate sprint burndown (ideal/actual) for all active Sprints
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date           Detail
+0.1  Clarasys       2015-03-21     Initial class development
+0.2  Clarasys       2015-03-29     Inclusion of private method getDiffBusinessDays() to base ideal burndown on working days (mon-fri)
+0.3  Clarasys       2015-04-16     Modification of lstUserStories query to look for Sprints in mapSprintIdSprint instead of lstSprints
+0.4  Clarasys       2015-08-17     Bug Fix: Modified execute() method to add Sprints to mapSprintIdSprint only if they have non-null sprinter__Start_Date__c and sprinter__End_Date__c
+*/
+
+global class CalculateSprintBurndown_Batch implements Database.Batchable<sObject> {
+
+    global final String query;
+    // Construct query string to retrieve all Sprints for all Projects 
+    global CalculateSprintBurndown_Batch(String q) {
+        query = 'SELECT id, sprinter__start_date__c, sprinter__end_date__c, sprinter__Status__c ' +
+                'FROM sprinter__Sprint__c ';
+    }
+    
+    global Database.QueryLocator start(Database.BatchableContext BC) {
+        return Database.getQueryLocator(query);
+    }
+//=======================================================================================================
+//Method - global scope
+//@name execute()
+//@param Database.BatchablContext BC, List<sObject> scope
+//@return N/A 
+//@description : execute method of Database.Batchable<sObject> class
+//=======================================================================================================     
+    global void execute(Database.BatchableContext BC, List<sObject> scope) {
+        //for each generic sObject in 'scope' cast to sprinter__Sprint__c sObject
+        List<sprinter__Sprint__c> lstSprints = new List<sprinter__Sprint__c>();
+        for (sObject s : scope) {
+            sprinter__Sprint__c sprint = (sprinter__Sprint__c)s;
+            lstSprints.add(sprint);
+            system.debug('lstSprints.add(sprint): ' + sprint);
+        }
+        
+        //create map of id, sprinter__Sprint__c from lstSprints, from Active sprints in this Period
+        Map<Id, sprinter__Sprint__c> mapSprintIdSprint = new Map<Id, sprinter__Sprint__c>();
+        for (sprinter__Sprint__c s : lstSprints) {            
+            if (s.sprinter__Start_Date__c != null && s.sprinter__End_Date__c != null) {
+                if (s.sprinter__Status__c == 'Active' && date.today().daysBetween(s.sprinter__Start_Date__c) <= 0 && s.sprinter__End_Date__c.daysBetween(date.today()) <= 0) {
+                    mapSprintIdSprint.put(s.id, s);
+            system.debug('mapSprintIdSprint.put(s.id, s): ' + s.id);                
+                }    
+            }
+        }
+        
+        //for each Sprint in lstSprints find the associated stories, sum up the remaining effort and calculate the ideal burndown,
+        if (mapSprintIdSprint.size() > 0) {
+            
+            //create listStories = query for all stories with Id in mapSprintIdSprint
+            List<sprinter__User_Story__c> lstUserStories = new List<sprinter__User_Story__c>([SELECT id, sprinter__Sprint__c, Total_Estimated_Effort__c, Total_Remaining_Effort__c
+                                                                                              FROM sprinter__User_Story__c
+                                                                                              WHERE sprinter__Sprint__c IN : mapSprintIdSprint.keySet()]);
+          system.debug('lstUserStories[0]: ' + lstUserStories[0]);
+            //loop through lstStories and add up the estmated/actual effort of the stories to the corresponding sprint
+            Map<Id, Decimal> mapSprintIdIdealBurndownEffort = new Map<Id, Decimal>();
+          Map<Id, Decimal> mapSprintIdActualBurndownEffort = new Map<Id, Decimal>();
+                
+            for (sprinter__User_Story__c s : lstUserStories) {
+                //if the SprintId from the Story already exists in mapSprintIdIdealBurndownEffort then add the Total_Estimated_Effort__c of the Story to the corresponding value in the map
+                if (mapSprintIdIdealBurndownEffort.containsKey(s.sprinter__Sprint__c)) {
+                    Decimal IdealEffort = mapSprintIdIdealBurndownEffort.get(s.sprinter__Sprint__c) + s.Total_Estimated_Effort__c;
+                    mapSprintIdIdealBurndownEffort.put(s.sprinter__Sprint__c, IdealEffort);
+          system.debug('point 1: IdealEffort = ' + IdealEffort);                    
+                }
+                //else create a new entry in the map with the SprintId and Total_Estimated_Effort__c 
+                else {
+                    mapSprintIdIdealBurndownEffort.put(s.sprinter__Sprint__c, s.Total_Estimated_Effort__c);
+          system.debug('point 2: IdealEffort = ' + s.Total_Estimated_Effort__c);                    
+                }
+                
+                //if the SprintId from the Story already exists in mapSprintIdActualBurndownEffort then add the Total_Remaining_Effort__c of the Story to the corresponding value in the map
+                if (mapSprintIdActualBurndownEffort.containsKey(s.sprinter__Sprint__c)) {
+                    Decimal ActualEffort = mapSprintIdActualBurndownEffort.get(s.sprinter__Sprint__c) + s.Total_Remaining_Effort__c;
+                    mapSprintIdActualBurndownEffort.put(s.sprinter__Sprint__c, ActualEffort); 
+                    system.debug('point 3: ActualEffort = ' + ActualEffort);
+                }
+                //else create a new entry in the map with the SprintId and Total_Remaining_Effort__c 
+                else {
+                    mapSprintIdActualBurndownEffort.put(s.sprinter__Sprint__c, s.Total_Remaining_Effort__c);
+                    system.debug('point 4: ActualEffort = ' + s.Total_Remaining_Effort__c);
+                }
+            }
+        
+            //for each entry in the mapSprintIdIdealBurndownEffort map, work out the Ideal_Burndown_Effort_Remaining__c based on the fraction of burned time in the sprint
+            List<sprinter__Sprint__c> lstUpdatedSprints = new List<sprinter__Sprint__c>();
+            
+            for (ID sprintId : mapSprintIdIdealBurndownEffort.keySet()) {
+                system.debug('sprintId: ' + sprintId);
+                sprinter__Sprint__c sprintToUpdate =  mapSprintIdSprint.get(sprintId);
+                Date sprintStartDate = sprintToUpdate.sprinter__Start_Date__c; //startDate of the sprint
+                system.debug('sprintStartDate: ' + sprintStartDate);
+                Date sprintEndDate = sprintToUpdate.sprinter__End_Date__c; //endDate of the sprint
+                system.debug('sprintEndDate: ' + sprintEndDate);
+                Date todaysDate = date.today(); //todays date
+                Decimal IdealEffortRemaining = 0.00;
+                
+                //calculate the fraction of the sprint remaining => could move this to a private helper method getFractionOfSprintBurndown
+                Decimal a = getDiffBusinessDays(sprintStartDate, todaysDate); //difference in working days between today and the sprintStartDate
+                system.debug('difference in working days between today and the sprintStartDate: ' + a);
+                Decimal b = getDiffBusinessDays(sprintStartDate, sprintEndDate); //difference in working days between sprintEndDate and sprintStartDate
+                system.debug('difference in working days between sprintEndDate and sprintStartDate: ' + b);
+                Decimal c = a.divide(b,3); //fraciton of Sprint burned through                
+                Decimal d = 1.00;
+                Decimal fractionBurndown = d - c;
+                system.debug('fractionBurndown: ' + fractionBurndown);
+                
+                if (fractionBurndown > 0.00) {
+                    IdealEffortRemaining = mapSprintIdIdealBurndownEffort.get(sprintId) * fractionBurndown;
+                }
+                else if (fractionBurndown == 0.00) {
+                    IdealEffortRemaining = 0.00;
+                }
+                sprintToUpdate.Ideal_Burndown_Effort_Remaining__c = IdealEffortRemaining;
+                
+                lstUpdatedSprints.add(sprintToUpdate);
+            }
+            Update lstUpdatedSprints;  //update the sprints
+            
+            //for each entry in the mapSprintIdActualBurndownEffort map, stamp the total remaining effort onto the Sprint
+            lstUpdatedSprints.clear();
+            
+            for (ID sprintId : mapSprintIdActualBurndownEffort.keySet()) {
+                sprinter__Sprint__c sprintToUpdate =  mapSprintIdSprint.get(sprintId);
+                sprintToUpdate.Actual_Effort_Remaining__c = mapSprintIdActualBurndownEffort.get(sprintId);
+                lstUpdatedSprints.add(sprintToUpdate);
+            }
+            Update lstUpdatedSprints;  //update the sprints
+        }
+    }
+//=======================================================================================================
+//Method - global scope
+//@name finish()
+//@param Database.BatchablContext BC
+//@return N/A 
+//@description : finish method of Database.Batchable<sObject> class, email is sent form te batch output 
+//=======================================================================================================
+    global void finish(Database.BatchableContext BC) {
+        AsyncApexJob a = [SELECT Id, Status, NumberOfErrors, JobItemsProcessed, TotalJobItems, CreatedBy.Email
+                          FROM AsyncApexJob 
+                          WHERE Id = :BC.getJobId()];
+                      
+        // Send an email to the Apex job's submitter
+        // notifying of job completion.
+        Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+        String[] toAddresses = new String[] {a.CreatedBy.Email};
+        mail.setToAddresses(toAddresses);
+        mail.setSubject('CalculateSprintBurndown_Batch Status: ' + a.Status);
+        mail.setPlainTextBody('The batch Apex job processed ' + a.TotalJobItems +' batches with '+ a.NumberOfErrors + ' failures.');
+        //Messaging.sendEmail(new Messaging.SingleEmailMessage[] { mail });
+    }   
+//=======================================================================================================
+//Method - private scope
+//@name getDiffBusinessDays()
+//@param Date startDate, Date endDate
+//@return integer workDays 
+//@description : private helper method to calculate the number of working days between two dates
+//=======================================================================================================
+    private Integer getDiffBusinessDays(Date startDate, Date endDate) {
+     
+        Date tempdate = null;
+     
+        if (startDate > endDate) {
+       tempdate = endDate;
+       endDate = startDate;
+       startDate = tempdate;
+     }
+    
+        Integer i = Math.mod((date.newinstance(1985, 6, 24)).daysBetween(startDate),7); // 24/6/85 was a monday
+    
+        Map<Integer, Map<Integer, Integer>> m = new Map<Integer, Map<Integer, Integer>> {
+      0 => new Map<Integer, Integer> { 1 => 2 , 2 => 3 , 3 => 4 , 4 => 5 , 5 => 5 , 6 => 5 },
+      1 => new Map<Integer, Integer> { 1 => 2 , 2 => 3 , 3 => 4 , 4 => 4 , 5 => 4 , 6 => 5 },
+      2 => new Map<Integer, Integer> { 1 => 2 , 2 => 3 , 3 => 3 , 4 => 3 , 5 => 4 , 6 => 5 },
+      3 => new Map<Integer, Integer> { 1 => 2 , 2 => 2 , 3 => 2 , 4 => 3 , 5 => 4 , 6 => 5 },
+      4 => new Map<Integer, Integer> { 1 => 1 , 2 => 1 , 3 => 2 , 4 => 3 , 5 => 4 , 6 => 5 },
+      5 => new Map<Integer, Integer> { 1 => 0 , 2 => 1 , 3 => 2 , 4 => 3 , 5 => 4 , 6 => 5 },
+      6 => new Map<Integer, Integer> { 1 => 1 , 2 => 2 , 3 => 3 , 4 => 4 , 5 => 5 , 6 => 5 }
+    };
+
+        Integer i2 = Math.mod((startDate.daysBetween(endDate)),7);
+    Integer workDays = (m.get(i)).get(i2);
+    
+        if (i2 == null || i2 < 1 || i2 > 6) {
+      if (i >= 0 && i <= 4) { workDays = 1; } 
+    else  { workDays = 0; }
+    }
+    
+        workDays = workDays + 5 * (Math.floor( ((Decimal) startDate.daysBetween(endDate)).divide(7,4))).intValue(); 
+    
+        if (tempdate != null) workDays *= -1; // negative number of days
+    
+        return workDays;
+      
+    }
+}

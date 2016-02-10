@@ -1,0 +1,265 @@
+/*
+Name:  CapacityDashboardController_TestSuite.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+-------
+Unit test suite for the SprintCapacityDashboardControllerExt Class
+-------
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date        Detail
+0.1  Clarasys       2015-12-22  Initial class development
+*/
+
+@isTest
+public with sharing class CapacityDashboardController_TestSuite {
+
+/*
+=====================
+Positive Test Cases
+=====================
+*/
+
+ /*
+  * Method: test_SprintCapacityDashboardControllerExt_NoCapacityAssigned() to test SprintCapacityDashboardControllerExt
+  * Test Data Setup: sprinter__Project__c, sprinter__Sprint__c with associated clarasys_Scrum_Team__c with one clarasys_Scrum_Team_Member__c with no capacity, sprinter__User_Story__c with one sprinter__Element__c 
+  * Test Conditions: insert the test data and then instantiate the Controller  
+  * Expected Outcome: the sprintCapacityPercentage = 100%
+  */
+  
+    static testmethod void test_SprintCapacityDashboardControllerExt_NoCapacityAssigned() {
+        
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, Single Sprint (Status = 'Active') with single User Story (with a single Task)]
+        // [Scrum Team (linked to the Sprint), with single Scrum Team Member (without Capacity) linked to a sprinter__Team_Member__c]
+        //==============================================================================================*/ 
+    
+        //create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; //insert testProject record
+        
+        //create Scrum Team
+        clarasys_Scrum_Team__c testScrumTeam = new clarasys_Scrum_Team__c();
+            testScrumTeam.name = 'Test Scrum Team';
+            testScrumTeam.Project__c = testProject.Id;
+        
+        insert testScrumTeam; //insert testScrumTeam record
+        
+        //create Sprint
+        sprinter__Sprint__c testSprint  = new sprinter__Sprint__c();
+          testSprint.sprinter__Project__c = testProject.Id;
+          testSprint.Scrum_Team__c = testScrumTeam.Id;
+          testSprint.sprinter__Start_Date__c = Date.Today(); // new sprint
+          testSprint.sprinter__End_Date__c = testSprint.sprinter__Start_Date__c + 10;
+          testSprint.sprinter__Status__c = 'Active';
+        
+        insert testSprint; //insert testSprint record
+        
+        //create User Story
+        sprinter__User_Story__c testStory = new sprinter__User_Story__c();
+            testStory.sprinter__Project__c = testProject.Id;
+            testStory.sprinter__Sprint__c = testSprint.Id;
+            testStory.sprinter__Status__c = 'Ready';
+          
+        insert testStory; //insert testStory record
+        
+        //create Team Member
+        sprinter__Team_Member__c testTeamMember = new sprinter__Team_Member__c();
+            testTeamMember.name = 'Kristian Jenner';
+        
+        insert testTeamMember; //insert testTeamMember record
+        
+        //create Scrum Team Member
+        clarasys_Scrum_Team_Member__c testScrumTeamMember = new clarasys_Scrum_Team_Member__c();
+            testScrumTeamMember.Team_Members__c = testTeamMember.Id;
+            testScrumTeamMember.Scrum_Team__c = testScrumTeam.Id;
+            testScrumTeamMember.Scrum_Role__c = 'Team Member';
+            testScrumTeamMember.Capacity__c = 0;
+            
+        insert testScrumTeamMember; //insert testScrumTeamMember record
+        
+        //create Task
+        sprinter__Element__c testTask = new sprinter__Element__c();
+            testTask.sprinter__User_Story__c = testStory.Id;
+            testTask.sprinter__Owner__c = testTeamMember.Id;
+            testTask.sprinter__Type__c = 'Task';
+            testTask.sprinter__Status__c = 'In Progress';
+            testTask.Effort__c = 10;
+        
+        insert testTask; //insert testTask record
+        
+        //create Sprint Scrum Team Member
+        clarasys_Sprint_Scrum_Team_Member__c testSprintScrumTeamMember = new clarasys_Sprint_Scrum_Team_Member__c();
+            testSprintScrumTeamMember.Scrum_Team__c = testScrumTeam.Id;
+            testSprintScrumTeamMember.Scrum_Team_Member__c = testScrumTeamMember.Id;
+            testSprintScrumTeamMember.Sprint__c = testSprint.Id;
+            testSprintScrumTeamMember.Capacity__c = 0;
+        
+        insert testSprintScrumTeamMember; //insert testSprintScrumTeamMember record
+        
+        /*================================================================================================
+        // -- TEST STEPS --
+        // 1) instantiate the sprinter__Sprint__c standard controller and SprintCapacityDashboardControllerExt controller extension for the testSprint record
+        // 2) set current page to VF page sprinter_SprintCapacityPlanning and seed id parameter with the testSprint.Id
+        // 3) verify sprintCapacity, sprintEstimatedEffort, sprintEffortRemaining and sprintCapacityPercentage = 100%
+        //==============================================================================================*/ 
+        
+        test.startTest(); //start Test
+        
+        // [1]
+        ApexPages.StandardController sc = new ApexPages.standardController(testSprint);
+        SprintCapacityDashboardControllerExt e = new SprintCapacityDashboardControllerExt(sc);
+        System.assertEquals(e.s, testSprint);
+        
+        // [2]
+        PageReference pageRef = Page.sprinter_SprintCapacityPlanning;
+        Test.setCurrentPage(pageRef);
+        ApexPages.currentPage().getParameters().put('id', testSprint.Id);
+        
+        // [3]
+        List<sprinter__Sprint__c> lstSprint = new List<sprinter__Sprint__c>([SELECT Id, Sprint_Scrum_Capacity__c, Total_Estimated_Effort__c, Actual_Effort_Remaining__c
+                                                                             FROM sprinter__Sprint__c
+                                                                             WHERE Id = :testSprint.Id
+                                                                            ]);
+        
+        System.assertEquals(lstSprint[0].Sprint_Scrum_Capacity__c, e.sprintCapacity);
+        System.assertEquals(lstSprint[0].Total_Estimated_Effort__c, e.sprintEstimatedEffort);
+        System.assertEquals(lstSprint[0].Actual_Effort_Remaining__c, e.sprintEffortRemaining);
+        System.assertEquals(100, e.sprintCapacityPercentage);
+       
+        test.stopTest(); //stop Test
+    }
+
+/*
+  * Method: test_SprintCapacityDashboardControllerExt_HalfCapacityAssigned() to test SprintCapacityDashboardControllerExt
+  * Test Data Setup: sprinter__Project__c, sprinter__Sprint__c with associated clarasys_Scrum_Team__c with one clarasys_Scrum_Team_Member__c with no capacity, sprinter__User_Story__c with one sprinter__Element__c 
+  * Test Conditions: insert the test data and then instantiate the Controller  
+  * Expected Outcome: the sprintCapacityPercentage = 50%
+  */
+  
+    static testmethod void test_SprintCapacityDashboardControllerExt_HalfCapacityAssigned() {
+        
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, Single Sprint (Status = 'Active') with single User Story (with a single Task)]
+        // [Scrum Team (linked to the Sprint), with single Scrum Team Member (without Capacity = Assigned Task Effort) linked to a sprinter__Team_Member__c]
+        //==============================================================================================*/ 
+    
+        //create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; //insert testProject record
+        
+        //create Scrum Team
+        clarasys_Scrum_Team__c testScrumTeam = new clarasys_Scrum_Team__c();
+            testScrumTeam.name = 'Test Scrum Team';
+            testScrumTeam.Project__c = testProject.Id;
+        
+        insert testScrumTeam; //insert testScrumTeam record
+        
+        //create Sprint
+        sprinter__Sprint__c testSprint  = new sprinter__Sprint__c();
+          testSprint.sprinter__Project__c = testProject.Id;
+          testSprint.Scrum_Team__c = testScrumTeam.Id;
+          testSprint.sprinter__Start_Date__c = Date.Today(); // new sprint
+          testSprint.sprinter__End_Date__c = testSprint.sprinter__Start_Date__c + 10;
+          testSprint.sprinter__Status__c = 'Active';
+        
+        insert testSprint; //insert testSprint record
+        
+        //create User Story
+        sprinter__User_Story__c testStory = new sprinter__User_Story__c();
+            testStory.sprinter__Project__c = testProject.Id;
+            testStory.sprinter__Sprint__c = testSprint.Id;
+            testStory.sprinter__Status__c = 'Ready';
+          
+        insert testStory; //insert testStory record
+        
+        //create Team Member
+        sprinter__Team_Member__c testTeamMember = new sprinter__Team_Member__c();
+            testTeamMember.name = 'Kristian Jenner';
+        
+        insert testTeamMember; //insert testTeamMember record
+        
+        //create Scrum Team Member
+        clarasys_Scrum_Team_Member__c testScrumTeamMember = new clarasys_Scrum_Team_Member__c();
+            testScrumTeamMember.Team_Members__c = testTeamMember.Id;
+            testScrumTeamMember.Scrum_Team__c = testScrumTeam.Id;
+            testScrumTeamMember.Scrum_Role__c = 'Team Member';
+            testScrumTeamMember.Capacity__c = 5;
+            
+        insert testScrumTeamMember; //insert testScrumTeamMember record
+        
+        //create Task
+        sprinter__Element__c testTask = new sprinter__Element__c();
+            testTask.sprinter__User_Story__c = testStory.Id;
+            testTask.sprinter__Owner__c = testTeamMember.Id;
+            testTask.sprinter__Type__c = 'Task';
+            testTask.sprinter__Status__c = 'In Progress';
+            testTask.Effort__c = 10;
+        
+        insert testTask; //insert testTask record
+        
+        //create Sprint Scrum Team Member
+        clarasys_Sprint_Scrum_Team_Member__c testSprintScrumTeamMember = new clarasys_Sprint_Scrum_Team_Member__c();
+            testSprintScrumTeamMember.Scrum_Team__c = testScrumTeam.Id;
+            testSprintScrumTeamMember.Scrum_Team_Member__c = testScrumTeamMember.Id;
+            testSprintScrumTeamMember.Sprint__c = testSprint.Id;
+            testSprintScrumTeamMember.Capacity__c = 20;
+        
+        insert testSprintScrumTeamMember; //insert testSprintScrumTeamMember record
+        
+        /*================================================================================================
+        // -- TEST STEPS --
+        // 1) instantiate the sprinter__Sprint__c standard controller and SprintCapacityDashboardControllerExt controller extension for the testSprint record
+        // 2) set current page to VF page sprinter_SprintCapacityPlanning and seed id parameter with the testSprint.Id
+        // 3) verify sprintCapacity, sprintEstimatedEffort, sprintEffortRemaining and sprintCapacityPercentage = 50%
+        //==============================================================================================*/ 
+        
+        test.startTest(); //start Test
+        
+        // [1]
+        ApexPages.StandardController sc = new ApexPages.standardController(testSprint);
+        SprintCapacityDashboardControllerExt e = new SprintCapacityDashboardControllerExt(sc);
+        System.assertEquals(e.s, testSprint);
+        
+        // [2]
+        PageReference pageRef = Page.sprinter_SprintCapacityPlanning;
+        Test.setCurrentPage(pageRef);
+        ApexPages.currentPage().getParameters().put('id', testSprint.Id);
+        
+        // [3]
+        List<sprinter__Sprint__c> lstSprint = new List<sprinter__Sprint__c>([SELECT Id, Sprint_Scrum_Capacity__c, Total_Estimated_Effort__c, Actual_Effort_Remaining__c
+                                                                             FROM sprinter__Sprint__c
+                                                                             WHERE Id = :testSprint.Id
+                                                                            ]);
+        
+        System.assertEquals(lstSprint[0].Sprint_Scrum_Capacity__c, e.sprintCapacity);
+        System.assertEquals(lstSprint[0].Total_Estimated_Effort__c, e.sprintEstimatedEffort);
+        System.assertEquals(lstSprint[0].Actual_Effort_Remaining__c, e.sprintEffortRemaining);
+        System.assertEquals(50, e.sprintCapacityPercentage);
+       
+        test.stopTest(); //stop Test
+    }
+    
+
+/*
+========================
+Test Data Helper Methods
+========================
+*/
+
+
+
+}

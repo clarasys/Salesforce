@@ -1,0 +1,254 @@
+/*
+Name:  UserStoryTriggerHandler.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+-------
+Class extends the TriggerHandler Class with overide methods for context specific trigger actions which 
+are invoked by the UserStory trigger
+This follows the Salesforce Trigger Handler design pattern
+-------
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date        Detail
+0.1  Clarasys       2015-07-10  Initial class development, including afterInsert(), afterUpdate() override methods
+0.2  Clarasys       2015-07-12  Added override methods for afterDelete(), afterUndelete() contexts  
+0.3  Clarasys       2015-07-15  Updated filter criteria in the afterUpdate() override method to include Stories for which the Sprint has changed
+0.4  Clarasys       2015-07-22  Updated afterInsert(), afterUpdate() override methods to exclude Stories without a Sprint
+0.5  Clarasys       2015-08-18  Updated afterUpdate() override method to handle Stories that have been removed from Sprint or moved to a new Sprint
+*/
+
+public class UserStoryTriggerHandler extends TriggerHandler {
+
+    private List<sprinter__User_Story__c> lstNewUserStory; //collection of new/updated sprinter__User_Story__c objects after trigger fires 
+    private List<sprinter__User_Story__c> lstOldUserStory; //collection of sprinter__User_Story__c objects before trigger fires 
+    private Map<ID, sprinter__User_Story__c> mapNewUserStory; //map of new/updated sprinter__User_Story__c objects after trigger fires
+    private Map<ID, sprinter__User_Story__c> mapOldUserStory; //map of sprinter__User_Story__c objects before trigger fires 
+    
+    public UserStoryTriggerHandler() {
+        this.lstNewUserStory = (List<sprinter__User_Story__c>) Trigger.new;
+        this.lstOldUserStory = (List<sprinter__User_Story__c>) Trigger.old;
+        this.mapNewUserStory = (Map<ID, sprinter__User_Story__c>) Trigger.newMap;
+        this.mapOldUserStory = (Map<ID, sprinter__User_Story__c>) Trigger.oldMap;
+    }
+/*
+=========================================================================================================
+CONTEXT OVERRIDES 
+=========================================================================================================
+*/ 
+    public override void afterInsert() {
+        
+        if (lstNewUserStory.size() > 0) {
+            
+            //filter out only the User Stories which do have a sprinter__Sprint__c
+            List<sprinter__User_Story__c> lstUpdatedUserStory = new List<sprinter__User_Story__c>();
+            
+            for (sprinter__User_Story__c s : lstNewUserStory) {
+                    
+                if (s.sprinter__Sprint__c != null) {
+                    lstUpdatedUserStory.add(s);
+                }
+            }
+            //call the updateLookupRollupSummaryfields() method with lstNewUserStory to update lookup rollup summary fields
+            updateLookupRollupSummaryfields(lstUpdatedUserStory);
+            
+            lstUpdatedUserStory.clear();
+        }
+
+    }
+    
+    public override void afterUpdate() {
+        
+        if (lstNewUserStory.size() > 0) {
+            
+            //filter out only the User Stories for which the value in the rollup fields has changed, and that have a sprinter__Sprint__c
+            Map<ID, sprinter__User_Story__c> mapUpdatedUserStory = new  Map<ID, sprinter__User_Story__c>();
+            Map<ID, sprinter__User_Story__c> mapUserStoriesRemovedFromSprint = new  Map<ID, sprinter__User_Story__c>();
+            Map<ID, sprinter__User_Story__c> mapUserStoriesMovedSprint = new  Map<ID, sprinter__User_Story__c>();
+            
+            for (sprinter__User_Story__c s : lstNewUserStory) {
+                //sprinter__User_Story__c records that have been added to a sprinter__Sprint__c    
+                if (s.sprinter__Sprint__c != null && (s.Total_Estimated_Effort__c != mapOldUserStory.get(s.Id).Total_Estimated_Effort__c || s.sprinter__Points__c != mapOldUserStory.get(s.Id).sprinter__Points__c || s.sprinter__Sprint__c != mapOldUserStory.get(s.Id).sprinter__Sprint__c)) {
+                    mapUpdatedUserStory.put(s.Id,s);
+                }
+            }
+            
+            for (sprinter__User_Story__c s : lstNewUserStory) {
+                //sprinter__User_Story__c records that have been removed from a sprinter__Sprint__c
+                if (s.sprinter__Sprint__c == null && mapOldUserStory.get(s.Id).sprinter__Sprint__c != null) {
+                    mapUserStoriesRemovedFromSprint.put(s.Id,s);
+                }
+            }
+            
+            for (sprinter__User_Story__c s : lstNewUserStory) {
+                //sprinter__User_Story__c records that have moved from one sprinter__Sprint__c to another    
+                if (s.sprinter__Sprint__c != null && mapOldUserStory.get(s.Id).sprinter__Sprint__c != null && mapOldUserStory.get(s.Id).sprinter__Sprint__c != s.sprinter__Sprint__c ) {
+                    mapUserStoriesMovedSprint.put(s.Id,s);
+                }
+            }
+            
+            //update fields on the parent sprinter__Sprint__c records for sprinter__User_Story__c records added to a Sprint
+            if (mapUpdatedUserStory.size() > 0) {
+                //call the updateLookupRollupSummaryfields() method with lstUpdatedUserStory to update lookup rollup summary fields
+                updateLookupRollupSummaryfields(mapUpdatedUserStory.values());
+            }
+            
+            //update fields on the old parent sprinter__Sprint__c records for sprinter__User_Story__c records removed from a Sprint
+            if (mapUserStoriesRemovedFromSprint.size() > 0) {
+                //call the updateOldParentSprints() method with lstUserStoriesRemovedFromSprint to update Total_Estimated_Effort__c and Total_Story_Points__c fields on the corresponding sprinter__Sprint__c records
+                updateOldParentSprints(mapUserStoriesRemovedFromSprint);
+            }
+            
+            //update fields on the old parent sprinter__Sprint__c records for sprinter__User_Story__c records moved to a new Sprint
+            if (mapUserStoriesMovedSprint.size() > 0) {
+                //call the updateOldParentSprints() method with lstUserStoriesMovedSprint to update Total_Estimated_Effort__c and Total_Story_Points__c fields on the corresponding sprinter__Sprint__c records
+                updateOldParentSprints(mapUserStoriesMovedSprint);
+            }
+            
+            mapUpdatedUserStory.clear();
+        }
+
+    }
+    
+    public override void afterDelete() {
+        
+        if (lstOldUserStory.size() > 0) {
+            //call the updateLookupRollupSummaryfields() method with lstOldUserStory to update lookup rollup summary fields
+            updateLookupRollupSummaryfields(lstOldUserStory);
+        }
+        
+    }
+    
+     public override void afterUndelete() {
+        
+        if (lstOldUserStory.size() > 0) {
+            //call the updateLookupRollupSummaryfields() method with lstOldUserStory to update lookup rollup summary fields
+            updateLookupRollupSummaryfields(lstOldUserStory);
+        }
+        
+    }
+
+/*
+=========================================================================================================
+PRIVATE METHODS 
+=========================================================================================================
+*/
+/*
+=========================================================================================================
+Method -- private void
+@name updateLookupRollupSummaryfields()
+@param List<sprinter__User_Story__c> lstUserStory - List of User Storries included in Trigger.new/
+       Trigger.old (depending on the trigger context) to perform the Lookup Rollup Summary operation on 
+@return n/a 
+=========================================================================================================
+*/
+    private void updateLookupRollupSummaryfields(List<sprinter__User_Story__c> lstUserStory) {
+            
+        if (lstUserStory.size() > 0) {
+        
+            /*
+            1) Create context for LREngine class, specify parent and child objects and lookup relationship field name
+            */
+            LREngine.Context ctx = new LREngine.Context(sprinter__Sprint__c.SobjectType,                                        // parent object
+                                                        sprinter__User_Story__c.SobjectType,                                    // child object
+                                                        Schema.SObjectType.sprinter__User_Story__c.fields.sprinter__Sprint__c); // relationship field name
+                                                            
+            /*
+            2) Specify rollup fields on the Sprint/UserStory relationship 
+            */
+            ctx.add(
+            new LREngine.RollupSummaryField(Schema.SObjectType.sprinter__Sprint__c.fields.Total_Estimated_Effort__c,        // field to which aggregated value will be saved in parent object
+                                            Schema.SObjectType.sprinter__User_Story__c.fields.Total_Estimated_Effort__c,    // field to aggregate in child object
+                                            LREngine.RollupOperation.Sum)                                                   // aggregate operation to be done i.e. SUM, AVG, COUNT, MIN/MAX
+            );                                                     
+                                         
+            
+            ctx.add(
+            new LREngine.RollupSummaryField(Schema.SObjectType.sprinter__Sprint__c.fields.Total_Story_Points__c,            // field to which aggregated value will be saved in parent object
+                                            Schema.SObjectType.sprinter__User_Story__c.fields.sprinter__Points__c,          // field to aggregate in child object
+                                            LREngine.RollupOperation.Sum)                                                   // aggregate operation to be done i.e. SUM, AVG, COUNT, MIN/MAX
+            ); 
+                                   
+
+            /* 
+            3) Call rollup method, returns in memory master objects with aggregated values, perform any post-processing after the rollup and persist the changes in the master 
+            */ 
+            Sobject[] masters = LREngine.rollUp(ctx, lstUserStory);    
+            
+            system.debug('lstUserStory.size() =' + lstUserStory.size() + ' lstUserStory[0].id = ' + lstUserStory[0].id);
+            //update the changes in the master
+            update masters;  
+       
+        }
+    }
+ 
+/*
+=========================================================================================================
+Method -- private void
+@name updateOldParentSprints()
+@param List<sprinter__User_Story__c> lstUserStory - List of User Storries in Trigger.new that have been
+       removed from Sprints/ moved to new Sprints 
+@return n/a 
+=========================================================================================================
+*/
+    private void updateOldParentSprints(Map<Id,sprinter__User_Story__c> mapUserStory) {
+     
+        if (mapUserStory.size() > 0) {    
+            
+            /*
+            1) Loop over mapUserStory and assign the old sprinter__Sprint__c Id  and sprinter__User_Story__c to mapdUserStorySprintId 
+            */
+            map<sprinter__User_Story__c,Id> mapdUserStorySprintId = new map<sprinter__User_Story__c,Id>();
+             
+            for (sprinter__User_Story__c us : mapUserStory.values()) {
+                //assign the old sprinter__Sprint__c Id  and sprinter__User_Story__c to mapSprintIdUserStory
+                mapdUserStorySprintId.put(us,mapOldUserStory.get(us.Id).sprinter__Sprint__c);
+            }
+            
+            /*
+            2) Construct a map of sprinter__Sprint__c Id and a List of its related sprinter__User_Story__c records
+            */
+            map<Id,List<sprinter__User_Story__c>> mapSprintIdListUserStories = new map<Id,List<sprinter__User_Story__c>>();
+            
+            for (sprinter__User_Story__c us : mapdUserStorySprintId.keyset()) {
+                if (mapSprintIdListUserStories.containsKey(mapdUserStorySprintId.get(us))) {
+                    mapSprintIdListUserStories.get(mapdUserStorySprintId.get(us)).add(us);
+                }    
+                else {
+                    mapSprintIdListUserStories.put(mapdUserStorySprintId.get(us), new List<sprinter__User_Story__c>{us});
+                }
+            }
+            
+            /*
+            3) Query the sprinter__Sprint__c records that were associated with the sprinter__User_Story__c records 
+            */
+            
+            List<sprinter__Sprint__c> lstSprintstoUpdate = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c
+                                                                                          FROM sprinter__Sprint__c
+                                                                                          WHERE Id IN : mapSprintIdListUserStories.keyset()]
+                                                                                        );
+            
+            
+            List<sprinter__Sprint__c> lstUpdatedSprints = new List<sprinter__Sprint__c>();
+            //loop over lstUpdateSprints and update the Total_Estimated_Effort__c and Total_Story_Points__c fields
+            for (sprinter__Sprint__c s : lstSprintstoUpdate) {
+                
+                for (sprinter__User_Story__c us : mapSprintIdListUserStories.get(s.Id)) {
+                   //remove the effort and story points from the old sprint, need to do this in a loop for each story associated to the sprint
+                    s.Total_Estimated_Effort__c = s.Total_Estimated_Effort__c - us.Total_Estimated_Effort__c;
+                    s.Total_Story_Points__c = s.Total_Story_Points__c - us.sprinter__Points__c;
+                 
+                    
+                }
+                
+                lstUpdatedSprints.add(s);
+            }
+            //update the sprinter__Sprint__c records with the new Total_Estimated_Effort__c and Total_Story_Points__c
+            update(lstUpdatedSprints);
+        }    
+
+    }
+
+}

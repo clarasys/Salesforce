@@ -1,0 +1,69 @@
+/**
+============================================
+@Author Kristian Jenner
+@name StoryServiceImplTestSuite
+@CreateDate 01/03/2015
+@Description Test suite for the StoryServiceImpl Class
+@Version 1.0
+============================================
+   */
+
+@isTest
+public class StoryServiceImplTestSuite{
+    
+ /**
+  * Method: test_setReadyStoryStatus to test StoryServiceImpl.updateStoryStatus method
+  */
+    static testMethod void test_setReadyStoryStatus(){
+    
+        //Create Test Data, single Project with three Stories, with Status 'New'
+        Integer pNoStories = 3; 
+        
+        sprinter__Project__c testProject = new sprinter__Project__c();
+            testProject.name = 'Test Project';
+          testProject.sprinter__Status__c = 'Future';
+        
+        insert testProject; //Insert testProject record
+        
+        List<sprinter__User_Story__c> testStories = new List<sprinter__User_Story__c>();
+        
+        For (Integer i=0; i<pNoStories; i++) {
+            sprinter__User_Story__c st = new sprinter__User_Story__c();
+            st.sprinter__Project__c = testProject.Id;
+            st.sprinter__Status__c = 'New';
+            st.sprinter__Title__c = 'Test Story for StoryServiceImpleTestSuite ' + i;
+            testStories.add(st);
+        }
+        
+        Test.startTest(); //Start Test
+        
+        insert testStories; //Insert testStories records
+         
+        //Initialise the Array of StoryIds containing the IDs of the created Stories
+        
+        List<String> lstStoryId = new List<String>();   
+        
+        For (Integer i=0; i<pNoStories; i++){
+            String stId = testStories[i].Id;
+            lstStoryId.add(stId);
+        }
+        
+        //Call the updateStoryStatus with the Ids of the Stories created and the status of 'Ready'
+        
+        StoryServiceImpl.updateStoryStatus(lstStoryId, 'Ready');
+        
+        List<sprinter__User_Story__c> lstUpdatedStories = [SELECT Id, sprinter__Status__c 
+                                                  FROM sprinter__User_Story__c 
+                                                  WHERE Id IN : lstStoryId];
+        
+        //Assert that all Stories have the status updated to 'Ready'
+        System.assertEquals(pNoStories, lstStoryId.size());
+        
+        For (Integer i=0; i < pNoStories; i++) {
+            System.assertEquals('Ready', lstUpdatedStories[i].sprinter__Status__c);
+            system.debug(lstUpdatedStories[i].sprinter__Status__c);
+        }
+        
+        Test.stopTest(); //Stop Test
+    }
+}

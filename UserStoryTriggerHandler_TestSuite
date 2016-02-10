@@ -1,0 +1,360 @@
+/*
+Name:  UserStoryTriggerHandler_TestSuite.cls
+Copyright © 2015  Clarasys
+=========================================================================================================
+CLASS DESCRIPTION
+=========================================================================================================
+-------
+Unit test suite for the UserStoryTriggerHandler Class
+-------
+=========================================================================================================
+HISTORY
+------- 
+Ver. Author         Date        Detail
+0.1  Clarasys       2015-08-20  Initial class development
+0.2  Clarasys       2015-08-26  Added bulk test methods
+*/
+
+@isTest
+public with sharing class UserStoryTriggerHandler_TestSuite {
+
+/*
+=====================
+Positive Test Cases
+=====================
+*/
+
+ /*
+  * Method: test_UserStoryTriggerHandler_addNewStoriesToSprint_bulk to test FeedItemTriggerHandler afterIntert() override method
+  * Test Data Setup: sprinter__Sprint__c, added to it, 200 sprinter__User_Story__c record with one sprinter__Element__c each, 
+  * Test Conditions: Insert the sprinter__User_Story__c records (linked to the Sprint)
+  * Expected Outcome: the Total_Estimated_Effort__c, Total_Story_Points__c fields on the sprinter__Sprint__c record reflect the sum of the sprinter__User_Story__c records
+  */
+  
+    static testmethod void test_UserStoryTriggerHandler_addNewStoriesToSprint_bulk() {
+        
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, Single Sprint (Status = 'Active') with 200 User Stories (each with a Task)]
+        //================================================================================================ 
+    */
+        //create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.Name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; //insert testProject record
+        
+        //create Sprint
+        sprinter__Sprint__c testSprint  = new sprinter__Sprint__c();
+          testSprint.sprinter__Project__c = testProject.Id;
+          testSprint.Actual_Effort_Remaining__c = 0.00;
+          testSprint.Ideal_Burndown_Effort_Remaining__c = 0.00;
+          testSprint.sprinter__Start_Date__c = Date.Today(); // new sprint
+          testSprint.sprinter__End_Date__c = testSprint.sprinter__Start_Date__c + 10;
+          testSprint.sprinter__Status__c = 'Active';
+        
+        insert testSprint; //insert testSprint record
+        
+        //create User Stories
+        decimal decTotalStoryPoints = 0; //initialize decimal to hold the total story points for all Stories added to the Sprint
+        List<sprinter__User_Story__c> lstTestStories = new List<sprinter__User_Story__c>();
+        for (Integer i = 0; i < 200; i++) {
+            sprinter__User_Story__c s = new sprinter__User_Story__c();
+            s.sprinter__Project__c = testProject.Id;
+            s.sprinter__Sprint__c = testSprint.Id;
+            s.sprinter__Status__c = 'Ready';
+            s.sprinter__Points__c = 10;
+            lstTestStories.add(s);
+            decTotalStoryPoints = decTotalStoryPoints + s.sprinter__Points__c;
+        }
+        
+        insert lstTestStories; //insert lstTestStories records
+        
+        //create Tasks (one per User Story)
+        decimal decTotalEstimatedEffort = 0; //initialize decimal to hold the total Estimated Effort for all Tasks added to stories added to the Sprint
+        List<sprinter__Element__c> lstTestTasks = new List<sprinter__Element__c>();
+        for (Integer i = 0; i < lstTestStories.size(); i++) {
+            sprinter__Element__c t = new sprinter__Element__c();
+            t.sprinter__User_Story__c = lstTestStories[i].Id;
+          t.sprinter__Type__c = 'Task';
+          t.sprinter__Status__c = 'In Progress';
+          t.Effort__c = 5;
+            lstTestTasks.add(t);
+            decTotalEstimatedEffort = decTotalEstimatedEffort + t.Effort__c;
+        }  
+        
+        insert lstTestTasks; //insert lstTestTasks records
+        
+        test.startTest(); //start Test
+        
+        //query the inserted/updated sprinter__Sprint__c record
+        List<sprinter__Sprint__c> lstInsertedSprint = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        //test assertions, the Sprint Total_Story_Points__c and Total_Estimated_Effort__c reflect the sum of the child User Stories
+        system.assertEquals(decTotalStoryPoints, lstInsertedSprint[0].Total_Story_Points__c);
+        system.assertEquals(decTotalEstimatedEffort, lstInsertedSprint[0].Total_Estimated_Effort__c);
+        
+        test.stopTest(); //stop Test
+        
+    }
+
+ /*
+  * Method: test_UserStoryTriggerHandler_removeStoriesFromSprint_bulk to test FeedItemTriggerHandler afterUpdate() override method
+  * Test Data Setup: sprinter__Sprint__c, added to it, 200 sprinter__User_Story__c record with one sprinter__Element__c each, 
+  * Test Conditions: Insert the sprinter__User_Story__c records (linked to the Sprint), then remove half the sprinter__User_Story__c records from the Sprint (set sprinter__Sprint__c = Null)
+  * Expected Outcome: the Total_Estimated_Effort__c, Total_Story_Points__c fields on the sprinter__Sprint__c record reflect the sum of the sprinter__User_Story__c records in the Sprint (half the original)
+  */
+    static testmethod void test_UserStoryTriggerHandler_removeStoriesFromSprint_bulk() {
+        
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, Single Sprint (Status = 'Active') with 200 User Stories (each with a Task)]
+        //================================================================================================ 
+    */
+        //create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.Name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; //insert testProject record
+        
+        //create Sprint
+        sprinter__Sprint__c testSprint  = new sprinter__Sprint__c();
+          testSprint.sprinter__Project__c = testProject.Id;
+          testSprint.Actual_Effort_Remaining__c = 0.00;
+          testSprint.Ideal_Burndown_Effort_Remaining__c = 0.00;
+          testSprint.sprinter__Start_Date__c = Date.Today(); // new sprint
+          testSprint.sprinter__End_Date__c = testSprint.sprinter__Start_Date__c + 10;
+          testSprint.sprinter__Status__c = 'Active';
+        
+        insert testSprint; //insert testSprint record
+        
+        //create User Stories
+        decimal decTotalStoryPoints = 0; //initialize decimal to hold the total story points for all Stories added to the Sprint
+        List<sprinter__User_Story__c> lstTestStories = new List<sprinter__User_Story__c>();
+        for (Integer i = 0; i < 200; i++) {
+            sprinter__User_Story__c s = new sprinter__User_Story__c();
+            s.sprinter__Project__c = testProject.Id;
+            s.sprinter__Sprint__c = testSprint.Id;
+            s.sprinter__Status__c = 'Ready';
+            s.sprinter__Points__c = 10;
+            lstTestStories.add(s);
+            decTotalStoryPoints = decTotalStoryPoints + s.sprinter__Points__c;
+        }
+        
+        insert lstTestStories; //insert lstTestStories records
+        
+        //create Tasks (one per User Story)
+        decimal decTotalEstimatedEffort = 0; //initialize decimal to hold the total Estimated Effort for all Tasks added to stories added to the Sprint
+        List<sprinter__Element__c> lstTestTasks = new List<sprinter__Element__c>();
+        for (Integer i = 0; i < lstTestStories.size(); i++) {
+            sprinter__Element__c t = new sprinter__Element__c();
+            t.sprinter__User_Story__c = lstTestStories[i].Id;
+          t.sprinter__Type__c = 'Task';
+          t.sprinter__Status__c = 'In Progress';
+          t.Effort__c = 5;
+            lstTestTasks.add(t);
+            decTotalEstimatedEffort = decTotalEstimatedEffort + t.Effort__c;
+        }  
+        
+        insert lstTestTasks; //insert lstTestTasks records
+
+        //query the inserted sprinter__Sprint__c record and associated Stories
+        List<sprinter__Sprint__c> lstInsertedSprint = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c,
+                                                                                        (SELECT Id, Total_Estimated_Effort__c, sprinter__Points__c
+                                                                                         FROM sprinter__User_Stories__r)
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        //test assertions, the Sprint Total_Story_Points__c and Total_Estimated_Effort__c reflect the sum of the child User Stories
+        system.assertEquals(decTotalStoryPoints, lstInsertedSprint[0].Total_Story_Points__c);
+        system.assertEquals(decTotalEstimatedEffort, lstInsertedSprint[0].Total_Estimated_Effort__c);
+
+        //remove all of the related User Stories from the Sprint
+        List<sprinter__User_Story__c> lstRelatedUserStories = lstInsertedSprint[0].sprinter__User_Stories__r;
+        
+        system.assertEquals(200, lstRelatedUserStories.size());
+        
+        List<sprinter__User_Story__c> lstUserStoriestoUpdate = new List<sprinter__User_Story__c>();
+        
+        decimal decRemovedTotalEstimatedEffort = 0;
+        for (sprinter__User_Story__c s : lstRelatedUserStories) {
+            s.sprinter__Sprint__c = null;
+            decRemovedTotalEstimatedEffort = decRemovedTotalEstimatedEffort + s.Total_Estimated_Effort__c;
+            lstUserStoriestoUpdate.add(s);
+        }
+        
+        decimal decRemainingTotalEstimatedEffort = decTotalEstimatedEffort - decRemovedTotalEstimatedEffort;
+        
+        test.startTest();
+        
+        update lstUserStoriesToUpdate;
+        
+        //query the updated sprinter__Sprint__c record and associated Stories
+        List<sprinter__Sprint__c> lstUpdatedSprint = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c,
+                                                                                        (SELECT Id, Total_Estimated_Effort__c, sprinter__Points__c
+                                                                                         FROM sprinter__User_Stories__r)
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        //test assertions, the Sprint Total_Story_Points__c and Total_Estimated_Effort__c are reduced to reflect the removed User Stories
+        system.assertEquals(decRemainingTotalEstimatedEffort, lstUpdatedSprint[0].Total_Estimated_Effort__c);
+        
+        test.stopTest();
+
+    }
+
+ /*
+  * Method: test_UserStoryTriggerHandler_moveStoriesToNewSprint_bulk to test FeedItemTriggerHandler afterIntert() and afterUpdate() override methods
+  * Test Data Setup: sprinter__Sprint__c, added to it, 200 sprinter__User_Story__c record with one sprinter__Element__c each, and another sprinter__Sprint__c record to move the sprinter__User_Story__c records to  
+  * Test Conditions: Insert the sprinter__User_Story__c records (linked to the Sprint), then update them to link to the other Sprint
+  * Expected Outcome: the Total_Estimated_Effort__c, Total_Story_Points__c fields on the sprinter__Sprint__c records (old and new) reflect the sum of the sprinter__User_Story__c records associated to each Sprint
+  */
+  
+    static testmethod void test_UserStoryTriggerHandler_moveStoriesToNewSprint_bulk() {
+        
+        /*================================================================================================
+        // -- TEST DATA --
+        // [Single Project, one Sprint (Status = 'Active') with 200 User Stories (each with a Task), and one Sprint without and User Stories]
+        //================================================================================================ 
+    */
+        //create Project
+        sprinter__Project__c testProject = new sprinter__Project__c();
+          testProject.Name = 'Test Project';
+          testProject.sprinter__Status__c = 'Active';
+          testProject.sprinter__Description__c = 'Test Project Description';
+        
+        insert testProject; //insert testProject record
+        
+        //create Sprint
+        sprinter__Sprint__c testSprint1  = new sprinter__Sprint__c();
+          testSprint1.sprinter__Project__c = testProject.Id;
+          testSprint1.Actual_Effort_Remaining__c = 0.00;
+          testSprint1.Ideal_Burndown_Effort_Remaining__c = 0.00;
+          testSprint1.sprinter__Start_Date__c = Date.Today(); // new sprint
+          testSprint1.sprinter__End_Date__c = testSprint1.sprinter__Start_Date__c + 10;
+          testSprint1.sprinter__Status__c = 'Active';
+        
+        insert testSprint1; //insert testSprint record
+        
+        //create a second Sprint (to move the User Sories to)
+        sprinter__Sprint__c testSprint2  = new sprinter__Sprint__c();
+          testSprint2.sprinter__Project__c = testProject.Id;
+          testSprint2.Actual_Effort_Remaining__c = 0.00;
+          testSprint2.Ideal_Burndown_Effort_Remaining__c = 0.00;
+          testSprint2.sprinter__Start_Date__c = Date.Today() + 11; // new sprint
+          testSprint2.sprinter__End_Date__c = testSprint2.sprinter__Start_Date__c + 10;
+          testSprint2.sprinter__Status__c = 'Active';
+        
+        insert testSprint2; //insert testSprint record
+        
+        //create User Stories
+        decimal decTotalStoryPoints = 0; //initialize decimal to hold the total story points for all Stories added to the Sprint
+        List<sprinter__User_Story__c> lstTestStories = new List<sprinter__User_Story__c>();
+        for (Integer i = 0; i < 200; i++) {
+            sprinter__User_Story__c s = new sprinter__User_Story__c();
+            s.sprinter__Project__c = testProject.Id;
+            s.sprinter__Sprint__c = testSprint1.Id;
+            s.sprinter__Status__c = 'Ready';
+            s.sprinter__Points__c = 10;
+            lstTestStories.add(s);
+            decTotalStoryPoints = decTotalStoryPoints + s.sprinter__Points__c;
+        }
+        
+        insert lstTestStories; //insert lstTestStories records
+        
+        //create Tasks (one per User Story)
+        decimal decTotalEstimatedEffort = 0; //initialize decimal to hold the total Estimated Effort for all Tasks added to stories added to the Sprint
+        List<sprinter__Element__c> lstTestTasks = new List<sprinter__Element__c>();
+        for (Integer i = 0; i < lstTestStories.size(); i++) {
+            sprinter__Element__c t = new sprinter__Element__c();
+            t.sprinter__User_Story__c = lstTestStories[i].Id;
+          t.sprinter__Type__c = 'Task';
+          t.sprinter__Status__c = 'In Progress';
+          t.Effort__c = 5;
+            lstTestTasks.add(t);
+            decTotalEstimatedEffort = decTotalEstimatedEffort + t.Effort__c;
+        }  
+        
+        insert lstTestTasks; //insert lstTestTasks records
+        
+        //query the inserted/updated sprinter__Sprint__c record
+        List<sprinter__Sprint__c> lstInsertedSprint1 = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c,
+                                                                                         (SELECT Id, Total_Estimated_Effort__c, sprinter__Points__c
+                                                                                          FROM sprinter__User_Stories__r)
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint1.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        //test assertions, the Sprint Total_Story_Points__c and Total_Estimated_Effort__c reflect the sum of the child User Stories
+        system.assertEquals(decTotalStoryPoints, lstInsertedSprint1[0].Total_Story_Points__c);
+        system.assertEquals(decTotalEstimatedEffort, lstInsertedSprint1[0].Total_Estimated_Effort__c);
+        
+        //move all of the related User Stories from the first Sprint to a new Sprint
+        List<sprinter__User_Story__c> lstRelatedUserStories = lstInsertedSprint1[0].sprinter__User_Stories__r;
+        
+        system.assertEquals(200, lstRelatedUserStories.size());
+        
+        List<sprinter__User_Story__c> lstUserStoriestoUpdate = new List<sprinter__User_Story__c>();
+        
+        decimal decRemovedTotalEstimatedEffort = 0;
+        for (sprinter__User_Story__c s : lstRelatedUserStories) {
+            s.sprinter__Sprint__c = testSprint2.Id;
+            decRemovedTotalEstimatedEffort = decRemovedTotalEstimatedEffort + s.Total_Estimated_Effort__c;
+            lstUserStoriestoUpdate.add(s);
+        }
+        
+        decimal decRemainingTotalEstimatedEffort = decTotalEstimatedEffort - decRemovedTotalEstimatedEffort;
+        
+        test.startTest();
+        
+        update lstUserStoriesToUpdate;
+        
+        //query the old sprinter__Sprint__c record and associated Stories
+        List<sprinter__Sprint__c> lstUpdatedSprint1 = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c,
+                                                                                        (SELECT Id, Total_Estimated_Effort__c, sprinter__Points__c
+                                                                                         FROM sprinter__User_Stories__r)
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint1.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        //test assertions, the Total_Estimated_Effort__c of the old Sprint reflect the removed User Stories
+        system.assertEquals(decRemainingTotalEstimatedEffort, lstUpdatedSprint1[0].Total_Estimated_Effort__c);
+        
+        //query the new sprinter__Sprint__c record and associated Stories
+        List<sprinter__Sprint__c> lstUpdatedSprint2 = new List<sprinter__Sprint__c>([SELECT Id, Total_Estimated_Effort__c, Total_Story_Points__c,
+                                                                                        (SELECT Id, Total_Estimated_Effort__c, sprinter__Points__c
+                                                                                         FROM sprinter__User_Stories__r)
+                                                                                     FROM sprinter__Sprint__c
+                                                                                     WHERE Id = : testSprint2.Id
+                                                                                     LIMIT 1]
+                                                                                   );
+        
+        ///test assertions, the Total_Estimated_Effort__c of the new Sprint is updated to be the sum of the added child User Stories
+        system.assertEquals(decTotalEstimatedEffort, lstUpdatedSprint2[0].Total_Estimated_Effort__c);
+        
+        test.stopTest();
+    }
+
+/*
+=====================
+Test Data Helper Methods
+=====================
+*/
+
+
+
+}
